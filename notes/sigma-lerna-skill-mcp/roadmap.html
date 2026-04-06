@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MCP 和 Skill 原理 - 学习路线图</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0f1117;
+    color: #e2e8f0;
+    min-height: 100vh;
+    padding: 40px 20px;
+  }
+  h1 {
+    text-align: center;
+    font-size: 1.8rem;
+    font-weight: 700;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, #60a5fa, #a78bfa);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .subtitle {
+    text-align: center;
+    color: #64748b;
+    font-size: 0.9rem;
+    margin-bottom: 40px;
+  }
+  .progress-bar {
+    max-width: 600px;
+    margin: 0 auto 40px;
+    background: #1e293b;
+    border-radius: 20px;
+    height: 8px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    width: 92%;
+    background: linear-gradient(90deg, #60a5fa, #a78bfa);
+    border-radius: 20px;
+    transition: width 0.6s ease;
+  }
+  .progress-text {
+    text-align: center;
+    color: #64748b;
+    font-size: 0.8rem;
+    margin-bottom: 40px;
+  }
+  .roadmap {
+    max-width: 900px;
+    margin: 0 auto;
+    position: relative;
+    padding-left: 40px;
+  }
+  .roadmap::before {
+    content: '';
+    position: absolute;
+    left: 15px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: linear-gradient(to bottom, #22c55e, #60a5fa, #a78bfa);
+    border-radius: 2px;
+  }
+  .node {
+    position: relative;
+    margin-bottom: 24px;
+    padding: 16px 20px;
+    background: #1e293b;
+    border-radius: 12px;
+    border: 1px solid #334155;
+    transition: all 0.3s ease;
+    cursor: default;
+  }
+  .node:hover { border-color: #60a5fa; transform: translateX(4px); box-shadow: 0 4px 20px rgba(96, 165, 250, 0.15); }
+  .node::before {
+    content: '';
+    position: absolute;
+    left: -33px;
+    top: 20px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid #60a5fa;
+    background: #0f1117;
+    z-index: 1;
+  }
+  .node.mastered::before { background: #22c55e; border-color: #22c55e; box-shadow: 0 0 8px #22c55e; }
+  .node.in-progress::before { background: #f59e0b; border-color: #f59e0b; box-shadow: 0 0 8px #f59e0b; animation: pulse 2s infinite; }
+  .node.not-started::before { background: #334155; border-color: #334155; }
+  @keyframes pulse { 0%, 100% { box-shadow: 0 0 8px #f59e0b; } 50% { box-shadow: 0 0 16px #f59e0b; } }
+  .node-header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .node-number { font-size: 0.75rem; font-weight: 600; color: #60a5fa; background: rgba(96, 165, 250, 0.1); padding: 2px 8px; border-radius: 6px; }
+  .node-title { font-weight: 600; font-size: 1rem; }
+  .node-prereq { font-size: 0.75rem; color: #64748b; margin-top: 4px; }
+  .node-score { font-size: 0.7rem; color: #22c55e; margin-left: auto; }
+  .badge { font-size: 0.7rem; padding: 2px 8px; border-radius: 4px; font-weight: 600; margin-left: auto; }
+  .badge-not-started { background: #334155; color: #94a3b8; }
+  .badge-in-progress { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+  .badge-mastered { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+  .section-header { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 2px; color: #64748b; margin: 32px 0 16px 0; }
+  .legend { max-width: 900px; margin: 40px auto 0; display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+  .legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: #64748b; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .legend-dot.mastered { background: #22c55e; }
+  .legend-dot.in-progress { background: #f59e0b; }
+  .legend-dot.not-started { background: #334155; }
+  .summary-box {
+    max-width: 900px;
+    margin: 40px auto;
+    padding: 24px;
+    background: rgba(34, 197, 94, 0.1);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    border-radius: 12px;
+  }
+  .summary-box h3 { color: #22c55e; font-size: 1rem; margin-bottom: 12px; }
+  .summary-box ul { list-style: none; padding: 0; }
+  .summary-box li { color: #94a3b8; font-size: 0.9rem; padding: 4px 0; padding-left: 16px; position: relative; }
+  .summary-box li::before { content: '✓'; position: absolute; left: 0; color: #22c55e; }
+</style>
+</head>
+<body>
+
+<h1>MCP 和 Skill 原理深度理解</h1>
+<p class="subtitle">诊断水平：Intermediate · Mastery：92% (11/12) · 2026-03-22</p>
+
+<div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+<p class="progress-text" id="progressText">11 / 12 concepts mastered</p>
+
+<div class="roadmap">
+
+  <div class="section-header">Part 1 · MCP 协议原理</div>
+
+  <div class="node mastered" id="node-1">
+    <div class="node-header">
+      <span class="node-number">#1</span>
+      <span class="node-title">为什么需要 MCP</span>
+      <span class="node-score">90%</span>
+      <span class="badge badge-mastered">已掌握</span>
+    </div>
+    <p class="node-prereq">无前置依赖</p>
+  </div>
+
+  <div class="node mastered" id="node-2">
+    <div class="node-header">
+      <span class="node-number">#2</span>
+      <span class="node-title">MCP 三角色架构：Host / Client / Server</span>
+      <span class="node-score">85%</span>
+      <span class="badge badge-mastered">已掌握</span>
+    </div>
+    <p class="node-prereq">前置: #1 为什么需要 MCP</p>
+  </div>
+
+  <div class="node mastered" id="node-3">
+    <div class="node-header">
+      <span class="node-number">#3</span>
+      <span class="node-title">JSON-RPC 2.0：MCP 的通信基础</span>
+      <span class="node-score">90%</span>
+      <span class="badge badge-mastered">已掌握</span>
+    </div>
+    <p class="node-prereq">前置: #2 三角色架构</p>
+  </div>
+
+  <div class="node mastered" id="node-4">
+    <div class="node-header">
+      <span class="node-number">#4</span>
+      <span class="node-title">MCP 三大原语：Tools / Resources / Prompts</span>
+      <span class="node-score">90%</span>
+      <span class="badge badge-mastered">已掌握</span>
+    </div>
+    <p class="node-prereq">前置: #2 三角色架构</p>
+  </div>
+
+  <div class="node mastered" id="node-5">
+    <div class="node-header">
+      <span class="node-number">#5</span>
+      <span class="node-title">工具 Schema 的注册与发现机制</span>
+      <span class="node-score">85%</span>
+      <span class="badge badge-mastered">已掌握</span>
+    </div>
+    <p class="node-prereq">前置: #3 JSON-RPC + #4 三大原语</p>
+  </div>
+
+  <div class="node mastered" id="node-6">
+    <div class="node-header">
+      <span class="node-number">#6</span>
+      <span class="node-title">MCP 请求-响应完整生命周期</span>
+      <span class="node-score">85%</span>
+      <span class="badge badge-mastered">已掌握</span>
+    </div>
+    <p class="node-prereq">前置: #5 Schema 注册</p>
+  </div>
+
+  <div class="node mastered" id="node-7">
+    <div class="node-header">
+      <span class="node-number">#7</span>
+      <span class="node-title">MCP vs Function Calling：本质区别</span>
+      <span class="node-score">90%</span>
+      <span class="badge badge-mastered">已掌握</span>
+    </div>
+    <p class="node-prereq">前置: #6 完整生命周期</p>
+  </div>
+
+  <div class="section-header">Part 2 · Skill 机制原理</div>
+
+  <div class="node mastered" id="node-8">
+    <div class="node-header">
+      <span class="node-number">#8</span>
+      <span class="node-title">Skill 本质：指令注入而非执行</span>
+      <span class="node-score">90%</span>
+      <span class="badge badge-mastered">已掌握</span>
+    </div>
+    <p class="node-prereq">无前置依赖</p>
+  </div>
+
+  <div class="node mastered" id="node-9">
+    <div class="node-header">
+      <span class="node-number">#9</span>
+      <span class="node-title">Skill 生命周期：加载 → 触发 → 执行</span>
+      <span class="node-score">85%</span>
+      <span class="badge badge-mastered">已掌握</span>
+    </div>
+    <p class="node-prereq">前置: #8 Skill 本质</p>
+  </div>
+
+  <div class="node mastered" id="node-10">
+    <div class="node-header">
+      <span class="node-number">#10</span>
+      <span class="node-title">Skill 与 MCP 的协同模式</span>
+      <span class="node-score">85%</span>
+      <span class="badge badge-mastered">已掌握</span>
+    </div>
+    <p class="node-prereq">前置: #7 MCP vs FC + #9 Skill 生命周期</p>
+  </div>
+
+  <div class="section-header">Part 3 · 实战应用</div>
+
+  <div class="node mastered" id="node-11">
+    <div class="node-header">
+      <span class="node-number">#11</span>
+      <span class="node-title">实战：实现一个 MCP Server</span>
+      <span class="node-score">85%</span>
+      <span class="badge badge-mastered">已掌握</span>
+    </div>
+    <p class="node-prereq">前置: #1-7 全部 MCP 概念</p>
+  </div>
+
+  <div class="node not-started" id="node-12">
+    <div class="node-header">
+      <span class="node-number">#12</span>
+      <span class="node-title">实战：编写一个 Skill</span>
+      <span class="badge badge-not-started">未开始</span>
+    </div>
+    <p class="node-prereq">前置: #8-10 全部 Skill 概念</p>
+  </div>
+
+</div>
+
+<div class="summary-box">
+  <h3>今日学习成果</h3>
+  <ul>
+    <li>纠正了 Skill 误解：Skill 是指令注入，不是调用 CLI</li>
+    <li>理解了 MCP 三角色架构：Host / Client / Server</li>
+    <li>掌握了 JSON-RPC 2.0 通信基础</li>
+    <li>区分了 Tools / Resources / Prompts 三大原语</li>
+    <li>理解了 MCP 完整生命周期</li>
+    <li>掌握了 MCP vs Function Calling 本质区别</li>
+    <li>理解了 Skill 与 MCP 的协同模式</li>
+    <li>完成 Mastery Check 综合题（总分 ~87%）</li>
+  </ul>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot mastered"></div>已掌握</div>
+  <div class="legend-item"><div class="legend-dot in-progress"></div>进行中</div>
+  <div class="legend-item"><div class="legend-dot not-started"></div>未开始</div>
+</div>
+
+</body>
+</html>
