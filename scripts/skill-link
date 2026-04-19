@@ -1,0 +1,272 @@
+#!/usr/bin/env zsh
+emulate -L zsh
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+用法:
+  skill-link install [--bin-dir <DIR>] [--force] [--dry-run]
+  skill-link <SKILL_DIR> <ENV> [--root <PROJECT_ROOT>] [--name <SKILL_NAME>] [--force] [--dry-run]
+
+参数:
+  SKILL_DIR  目标 SKILL 目录路径（目录名默认作为 skill 名称）
+  ENV        目标环境（如: trae / claude / agents / codebuddy）
+
+选项:
+  install 子命令选项:
+    --bin-dir  安装目录（默认: ~/.local/bin，其次 ~/bin）
+    安装后将同时提供两个命令：skill-link 与 sl
+
+  --root     软链要创建到的项目根目录（默认自动探测 git 根目录，否则用当前目录）
+  --name     指定软链目录名（默认取 SKILL_DIR 的 basename）
+  --force    目标位置已存在时覆盖
+  --dry-run  只打印将要执行的操作，不实际创建
+
+可扩展配置:
+  你可以在以下文件里扩展/覆盖 ENV 映射（提供同名的 ENV_BASE 关联数组即可）:
+    - <PROJECT_ROOT>/.skill-linker.zsh
+    - ~/.config/skill-linker/env.zsh
+EOF
+}
+
+abs_path() {
+  local p="$1"
+  python3 - "$p" <<'PY'
+import os, sys
+print(os.path.realpath(sys.argv[1]))
+PY
+}
+
+install_self() {
+  local script_path="$1"
+  local bin_dir="$2"
+  local force="$3"
+  local dry_run="$4"
+
+  [[ -n "$bin_dir" ]] || {
+    if [[ -d "$HOME/.local/bin" ]]; then
+      bin_dir="$HOME/.local/bin"
+    else
+      bin_dir="$HOME/bin"
+    fi
+  }
+
+  local self
+  self="$(abs_path "$script_path")"
+  local dest_main="$bin_dir/skill-link"
+  local dest_short="$bin_dir/sl"
+
+  local cmd_mkdir=(mkdir -p "$bin_dir")
+  local cmd_ln_main=(ln -s "$self" "$dest_main")
+  local cmd_ln_short=(ln -s "$self" "$dest_short")
+
+  ensure_link() {
+    local dest="$1"
+    shift
+    local -a cmd_ln=("$@")
+
+    if [[ -e "$dest" || -L "$dest" ]]; then
+      if [[ -L "$dest" ]]; then
+        local existing
+        existing="$(readlink "$dest" || true)"
+        if [[ -n "$existing" && "$(abs_path "$existing")" == "$self" ]]; then
+          return 0
+        fi
+      fi
+      if [[ "$force" != "1" ]]; then
+        echo "安装目标已存在: $dest（加 --force 覆盖）" >&2
+        return 2
+      fi
+      rm -rf "$dest"
+    fi
+
+    if [[ "$dry_run" == "1" ]]; then
+      print -r -- "+ ${(q)cmd_ln[@]}"
+      return 0
+    fi
+
+    "$cmd_ln[@]"
+    return 0
+  }
+
+  if [[ "$dry_run" == "1" ]]; then
+    print -r -- "+ ${(q)cmd_mkdir[@]}"
+    ensure_link "$dest_main" "${cmd_ln_main[@]}"
+    ensure_link "$dest_short" "${cmd_ln_short[@]}"
+    echo "确保 $bin_dir 在 PATH 里（zsh: ~/.zshrc）："
+    echo "  export PATH=\"${bin_dir}:\\\$PATH\""
+    return 0
+  fi
+
+  "$cmd_mkdir[@]"
+  ensure_link "$dest_main" "${cmd_ln_main[@]}"
+  ensure_link "$dest_short" "${cmd_ln_short[@]}"
+  echo "已安装: $dest_main -> $self"
+  echo "已安装: $dest_short -> $self"
+  echo "确保 $bin_dir 在 PATH 里（zsh: ~/.zshrc）："
+  echo "  export PATH=\"${bin_dir}:\\\$PATH\""
+}
+
+if [[ $# -lt 1 ]]; then
+  usage
+  exit 1
+fi
+
+if [[ "$1" == "install" ]]; then
+  shift
+  script_path="${(%):-%N}"
+  bin_dir=""
+  force="0"
+  dry_run="0"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --bin-dir)
+        [[ $# -ge 2 ]] || { echo "缺少 --bin-dir 参数值" >&2; exit 2; }
+        bin_dir="$2"
+        shift 2
+        ;;
+      --force)
+        force="1"
+        shift
+        ;;
+      --dry-run)
+        dry_run="1"
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      *)
+        echo "未知参数: $1" >&2
+        usage >&2
+        exit 2
+        ;;
+    esac
+  done
+  install_self "$script_path" "$bin_dir" "$force" "$dry_run"
+  exit $?
+fi
+
+if [[ $# -lt 2 ]]; then
+  usage
+  exit 1
+fi
+
+skill_dir="$1"
+env="$2"
+shift 2
+
+root=""
+name=""
+force="0"
+dry_run="0"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --root)
+      [[ $# -ge 2 ]] || { echo "缺少 --root 参数值" >&2; exit 2; }
+      root="$2"
+      shift 2
+      ;;
+    --name)
+      [[ $# -ge 2 ]] || { echo "缺少 --name 参数值" >&2; exit 2; }
+      name="$2"
+      shift 2
+      ;;
+    --force)
+      force="1"
+      shift
+      ;;
+    --dry-run)
+      dry_run="1"
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "未知参数: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [[ ! -d "$skill_dir" ]]; then
+  echo "SKILL_DIR 不存在或不是目录: $skill_dir" >&2
+  exit 2
+fi
+
+if [[ -z "$root" ]]; then
+  root="$(git -C "$PWD" rev-parse --show-toplevel 2>/dev/null || true)"
+  [[ -n "$root" ]] || root="$PWD"
+fi
+
+if [[ ! -d "$root" ]]; then
+  echo "PROJECT_ROOT 不存在或不是目录: $root" >&2
+  exit 2
+fi
+
+typeset -A ENV_BASE
+ENV_BASE=(
+  agents   ".agents/skills"
+  trae     ".trae/skills"
+  claude   ".claude/skills"
+  codebuddy ".codebuddy/skills"
+)
+
+project_cfg="$root/.skill-linker.zsh"
+user_cfg="$HOME/.config/skill-linker/env.zsh"
+
+if [[ -f "$project_cfg" ]]; then
+  source "$project_cfg"
+fi
+if [[ -f "$user_cfg" ]]; then
+  source "$user_cfg"
+fi
+
+base="${ENV_BASE[$env]-}"
+if [[ -z "$base" ]]; then
+  echo "不支持的 ENV: $env" >&2
+  echo "支持的 ENV: ${(j: , :)${(k)ENV_BASE}}" >&2
+  exit 2
+fi
+
+target="$(abs_path "$skill_dir")"
+if [[ -z "$name" ]]; then
+  name="${skill_dir:t}"
+fi
+
+dest_base="$root/$base"
+dest="$dest_base/$name"
+
+cmd_mkdir=(mkdir -p "$dest_base")
+cmd_ln=(ln -s "$target" "$dest")
+
+if [[ -e "$dest" || -L "$dest" ]]; then
+  if [[ -L "$dest" ]]; then
+    existing="$(readlink "$dest" || true)"
+    if [[ -n "$existing" && "$(abs_path "$existing")" == "$target" ]]; then
+      echo "已存在相同软链: $dest -> $target"
+      exit 0
+    fi
+  fi
+  if [[ "$force" != "1" ]]; then
+    echo "目标已存在: $dest（加 --force 覆盖）" >&2
+    exit 2
+  fi
+  rm -rf "$dest"
+fi
+
+if [[ "$dry_run" == "1" ]]; then
+  print -r -- "+ ${(q)cmd_mkdir[@]}"
+  print -r -- "+ ${(q)cmd_ln[@]}"
+  exit 0
+fi
+
+"$cmd_mkdir[@]"
+"$cmd_ln[@]"
+
+echo "已创建软链: $dest -> $target"
