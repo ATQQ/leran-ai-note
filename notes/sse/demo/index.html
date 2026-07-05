@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SSE 流式输出 Demo - 糖哥</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 40px 20px;
+    }
+    .container { max-width: 960px; margin: 0 auto; }
+
+    h1 {
+      text-align: center;
+      margin-bottom: 8px;
+      font-size: 28px;
+      background: linear-gradient(135deg, #60a5fa, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .subtitle {
+      text-align: center;
+      color: #94a3b8;
+      margin-bottom: 40px;
+      font-size: 14px;
+    }
+
+    .demo-grid { display: grid; grid-template-columns: 1fr; gap: 28px; }
+
+    /* ===== Card ===== */
+    .card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 24px;
+      transition: border-color 0.2s;
+    }
+    .card:hover { border-color: #475569; }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .card-title {
+      font-size: 18px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card-title .badge {
+      font-size: 11px;
+      background: #334155;
+      padding: 2px 8px;
+      border-radius: 4px;
+      color: #94a3b8;
+      font-weight: 400;
+    }
+
+    .controls { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    button {
+      padding: 8px 20px;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    button:active { transform: scale(0.97); }
+
+    .btn-start { background: #3b82f6; color: white; }
+    .btn-start:hover { background: #2563eb; }
+    .btn-start:disabled { background: #1e3a5f; color: #64748b; cursor: not-allowed; }
+
+    .btn-stop { background: #ef4444; color: white; }
+    .btn-stop:hover { background: #dc2626; }
+    .btn-stop:disabled { background: #3f1a1a; color: #64748b; cursor: not-allowed; }
+
+    .btn-clear { background: #475569; color: white; }
+    .btn-clear:hover { background: #64748b; }
+
+    /* ===== Output area ===== */
+    .output {
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      padding: 16px;
+      min-height: 120px;
+      max-height: 260px;
+      overflow-y: auto;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 14px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .output .msg { padding: 4px 0; border-bottom: 1px solid #1e293b; }
+    .output .msg:last-child { border-bottom: none; }
+    .output .msg .time { color: #64748b; font-size: 12px; margin-right: 8px; }
+    .output .msg .tag {
+      display: inline-block; font-size: 11px; padding: 0 6px;
+      border-radius: 3px; margin-right: 6px;
+    }
+    .tag-data { background: #1e3a5f; color: #60a5fa; }
+    .tag-event { background: #3b1f3b; color: #c084fc; }
+    .tag-done { background: #1a3b1a; color: #4ade80; }
+
+    .chat-output { font-size: 16px; line-height: 1.8; }
+    .chat-output .cursor {
+      display: inline-block; width: 2px; height: 1.2em;
+      background: #60a5fa; margin-left: 2px;
+      animation: blink 0.8s step-end infinite; vertical-align: text-bottom;
+    }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    .status {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 13px; color: #94a3b8; margin-top: 8px;
+    }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%; background: #64748b;
+    }
+    .status-dot.connected { background: #4ade80; }
+    .status-dot.error { background: #ef4444; }
+    .status-dot.closed { background: #64748b; }
+
+    .input-group {
+      display: flex; gap: 8px; margin-bottom: 12px;
+    }
+    .input-group input {
+      flex: 1; padding: 8px 12px; background: #0f172a;
+      border: 1px solid #334155; border-radius: 8px;
+      color: #e2e8f0; font-size: 14px; outline: none;
+    }
+    .input-group input:focus { border-color: #3b82f6; }
+
+    /* ===== Code Block (Collapsible) ===== */
+    .code-toggle {
+      margin-top: 16px;
+      border-top: 1px solid #334155;
+      padding-top: 12px;
+    }
+    .code-toggle summary {
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      color: #94a3b8;
+      user-select: none;
+      padding: 4px 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .code-toggle summary:hover { color: #60a5fa; }
+    .code-toggle summary::marker { color: #64748b; }
+    .code-toggle summary .arrow {
+      display: inline-block;
+      transition: transform 0.2s;
+      font-size: 12px;
+    }
+    .code-toggle[open] summary .arrow { transform: rotate(90deg); }
+
+    .code-block {
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      overflow: hidden;
+      margin-top: 8px;
+    }
+    .code-block .code-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 12px;
+      background: #1a2332;
+      border-bottom: 1px solid #1e293b;
+      font-size: 12px;
+      color: #94a3b8;
+    }
+    .code-block .code-header .lang {
+      background: #334155;
+      padding: 1px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+    }
+    .code-block .copy-btn {
+      background: none;
+      border: 1px solid #334155;
+      color: #94a3b8;
+      padding: 2px 10px;
+      font-size: 11px;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .code-block .copy-btn:hover { background: #334155; color: #e2e8f0; }
+    .code-block pre {
+      padding: 14px 16px;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.6;
+      font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+      color: #e2e8f0;
+      margin: 0;
+      tab-size: 2;
+    }
+    .code-block pre .comment { color: #64748b; }
+    .code-block pre .keyword { color: #c084fc; }
+    .code-block pre .string { color: #4ade80; }
+    .code-block pre .number { color: #fbbf24; }
+    .code-block pre .builtin { color: #60a5fa; }
+    .code-block pre .method { color: #67e8f9; }
+    .code-block pre .punctuation { color: #94a3b8; }
+    .code-block pre .variable { color: #f472b6; }
+
+    /* ===== Notes ===== */
+    .note-box {
+      margin-top: 40px;
+      padding: 16px 20px;
+      background: #1e293b;
+      border-left: 4px solid #f59e0b;
+      border-radius: 8px;
+      font-size: 14px;
+      line-height: 1.8;
+      color: #cbd5e1;
+    }
+    .note-box strong { color: #fbbf24; }
+
+    footer {
+      text-align: center;
+      margin-top: 40px;
+      color: #475569;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🔄 SSE 流式输出 Demo</h1>
+    <p class="subtitle">Server-Sent Events 三种模式演示 — 含前后端完整代码</p>
+
+    <div class="demo-grid">
+
+      <!-- ============================================ -->
+      <!-- Demo 1: 标准 SSE (EventSource) -->
+      <!-- ============================================ -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            📡 标准 SSE <span class="badge">EventSource API</span>
+          </div>
+          <div class="controls">
+            <button class="btn-start" onclick="startSSE()">开始</button>
+            <button class="btn-stop" onclick="stopSSE()" disabled>停止</button>
+            <button class="btn-clear" onclick="clearOutput('sse-output')">清空</button>
+          </div>
+        </div>
+        <div class="status" id="sse-status">
+          <span class="status-dot" id="sse-dot"></span>
+          <span id="sse-status-text">就绪</span>
+        </div>
+        <div class="output" id="sse-output">
+          <div class="msg" style="color:#64748b;">点击「开始」建立 SSE 连接...</div>
+        </div>
+
+        <!-- 代码区 -->
+        <details class="code-toggle">
+          <summary><span class="arrow">▶</span> 查看前后端代码</summary>
+
+          <!-- 服务端 -->
+          <div class="code-block">
+            <div class="code-header">
+              <span>server.mjs — 服务端</span>
+              <span class="lang">Node.js</span>
+            </div>
+            <pre><span class="comment">// ===== 服务端：基本 SSE 端点 =====</span>
+<span class="keyword">if</span> (pathname === <span class="string">'/events'</span>) {
+  <span class="comment">// 设置 SSE 必需的响应头</span>
+  res.writeHead(<span class="number">200</span>, {
+    <span class="string">'Content-Type'</span>: <span class="string">'text/event-stream'</span>,
+    <span class="string">'Cache-Control'</span>: <span class="string">'no-cache'</span>,
+    <span class="string">'Connection'</span>: <span class="string">'keep-alive'</span>,
+    <span class="string">'Access-Control-Allow-Origin'</span>: <span class="string">'*'</span>,
+  })
+
+  <span class="builtin">let</span> count = <span class="number">0</span>
+  <span class="builtin">const</span> intervalId = setInterval(<span class="punctuation">()</span> <span class="keyword">=></span> {
+    count++
+    <span class="comment">// SSE 格式: data: &lt;json&gt;\n\n</span>
+    res.write(<span class="string">`id: ${count}\ndata: ${JSON.stringify({
+      id: count,
+      message: `第 ${count} 条推送`,
+      timestamp: <span class="keyword">new</span> <span class="method">Date</span>().toISOString()
+    })}\n\n`</span>)
+
+    <span class="keyword">if</span> (count >= <span class="number">10</span>) {
+      clearInterval(intervalId)
+      res.write(<span class="string">`event: done\ndata: 全部推送完成\n\n`</span>)
+      res.end()
+    }
+  }, <span class="number">1000</span>) <span class="comment">// 每秒推一条</span>
+
+  <span class="comment">// 客户端断开时清理资源</span>
+  req.on(<span class="string">'close'</span>, <span class="punctuation">()</span> <span class="keyword">=></span> clearInterval(intervalId))
+}</pre>
+          </div>
+
+          <!-- 客户端 -->
+          <div class="code-block" style="margin-top:8px;">
+            <div class="code-header">
+              <span>index.html — 客户端</span>
+              <span class="lang">JavaScript</span>
+            </div>
+            <pre><span class="comment">// ===== 客户端：原生 EventSource API =====</span>
+sseSource = <span class="keyword">new</span> <span class="method">EventSource</span>(<span class="string">'/events'</span>)
+
+<span class="comment">// 连接成功回调</span>
+sseSource.onopen = <span class="punctuation">()</span> <span class="keyword">=></span> {
+  <span class="builtin">console</span>.<span class="method">log</span>(<span class="string">'SSE 连接已建立'</span>)
+}
+
+<span class="comment">// 监听自定义事件（服务端 event: connected）</span>
+sseSource.addEventListener(<span class="string">'connected'</span>, <span class="punctuation">(</span>e<span class="punctuation">)</span> <span class="keyword">=></span> {
+  <span class="builtin">console</span>.<span class="method">log</span>(<span class="string">'连接成功:'</span>, e.data)
+})
+
+<span class="comment">// 接收普通消息（没有 event 字段的消息）</span>
+sseSource.onmessage = <span class="punctuation">(</span>e<span class="punctuation">)</span> <span class="keyword">=></span> {
+  <span class="builtin">const</span> data = <span class="method">JSON</span>.<span class="method">parse</span>(e.data)
+  <span class="builtin">console</span>.<span class="method">log</span>(<span class="string">'收到消息:'</span>, data.message)
+}
+
+<span class="comment">// 监听 done 事件（服务端 event: done）</span>
+sseSource.addEventListener(<span class="string">'done'</span>, <span class="punctuation">(</span>e<span class="punctuation">)</span> <span class="keyword">=></span> {
+  <span class="builtin">console</span>.<span class="method">log</span>(<span class="string">'推送完成:'</span>, e.data)
+  sseSource.close() <span class="comment">// 手动关闭连接</span>
+})
+
+<span class="comment">// 错误处理（浏览器会自动重连）</span>
+sseSource.onerror = <span class="punctuation">(</span>err<span class="punctuation">)</span> <span class="keyword">=></span> {
+  <span class="builtin">console</span>.<span class="method">error</span>(<span class="string">'连接异常，将自动重连'</span>)
+}
+
+<span class="comment">// 手动关闭</span>
+<span class="keyword">function</span> <span class="method">stopSSE</span>() {
+  sseSource.close()
+}</pre>
+          </div>
+        </details>
+      </div>
+
+      <!-- ============================================ -->
+      <!-- Demo 2: 模拟 LLM 流式输出 -->
+      <!-- ============================================ -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            🤖 LLM 流式输出 <span class="badge">打字机效果</span>
+          </div>
+          <div class="controls">
+            <button class="btn-start" onclick="startChat()">开始</button>
+            <button class="btn-stop" onclick="stopChat()" disabled>停止</button>
+            <button class="btn-clear" onclick="clearOutput('chat-output')">清空</button>
+          </div>
+        </div>
+        <div class="input-group">
+          <input id="chat-input" type="text" placeholder="输入你想让 AI 说的话..." value="糖哥你好！SSE 流式输出就是这样逐字推送的，延迟很低，体验很流畅！">
+          <button class="btn-clear" onclick="document.getElementById('chat-input').value=''" style="padding:8px 12px;">清空</button>
+        </div>
+        <div class="status" id="chat-status">
+          <span class="status-dot" id="chat-dot"></span>
+          <span id="chat-status-text">就绪</span>
+        </div>
+        <div class="output chat-output" id="chat-output">
+          <span style="color:#64748b;">点击「开始」体验打字机效果...</span>
+        </div>
+
+        <!-- 代码区 -->
+        <details class="code-toggle">
+          <summary><span class="arrow">▶</span> 查看前后端代码</summary>
+
+          <!-- 服务端 -->
+          <div class="code-block">
+            <div class="code-header">
+              <span>server.mjs — 服务端：逐字推送</span>
+              <span class="lang">Node.js</span>
+            </div>
+            <pre><span class="comment">// ===== 服务端：模拟 AI 逐字输出 =====</span>
+<span class="keyword">if</span> (pathname === <span class="string">'/chat'</span>) {
+  <span class="builtin">const</span> text = url.searchParams.get(<span class="string">'text'</span>)
+  <span class="comment">// ... 设置 SSE 响应头 ...</span>
+
+  <span class="builtin">let</span> index = <span class="number">0</span>
+  <span class="builtin">const</span> speed = <span class="number">80</span> <span class="comment">// 每字间隔 80ms</span>
+
+  <span class="builtin">const</span> intervalId = setInterval(<span class="punctuation">()</span> <span class="keyword">=></span> {
+    <span class="keyword">if</span> (index < text.length) {
+      <span class="comment">// 逐字推送，每次只推一个字符</span>
+      <span class="builtin">const</span> char = text[index]
+      res.write(<span class="string">`data: ${JSON.stringify({
+        token: char,   <span class="comment">// 单个字符</span>
+        index          <span class="comment">// 位置序号</span>
+      })}\n\n`</span>)
+      index++
+    } <span class="keyword">else</span> {
+      clearInterval(intervalId)
+      <span class="comment">// [DONE] 是 OpenAI API 的结束标志</span>
+      res.write(<span class="string">`event: done\ndata: [DONE]\n\n`</span>)
+      res.end()
+    }
+  }, speed)
+}</pre>
+          </div>
+
+          <!-- 客户端 -->
+          <div class="code-block" style="margin-top:8px;">
+            <div class="code-header">
+              <span>index.html — 客户端：fetch 解析 SSE 流</span>
+              <span class="lang">JavaScript</span>
+            </div>
+            <pre><span class="comment">// ===== 客户端：fetch + ReadableStream 解析 =====</span>
+<span class="builtin">const</span> response = <span class="keyword">await</span> <span class="method">fetch</span>(<span class="string">`/chat?text=${encodeURIComponent(text)}`</span>)
+
+<span class="comment">// 获取流的读取器</span>
+<span class="builtin">const</span> reader = response.body.getReader()
+<span class="builtin">const</span> decoder = <span class="keyword">new</span> <span class="method">TextDecoder</span>()
+<span class="builtin">let</span> buffer = <span class="string">''</span>
+
+<span class="keyword">while</span> (<span class="keyword">true</span>) {
+  <span class="builtin">const</span> { done, value } = <span class="keyword">await</span> reader.read()
+  <span class="keyword">if</span> (done) <span class="keyword">break</span>
+
+  <span class="comment">// 把二进制解码为文本，追加到 buffer</span>
+  buffer += decoder.decode(value, { stream: <span class="keyword">true</span> })
+
+  <span class="comment">// SSE 协议：消息以 \n\n 分隔</span>
+  <span class="builtin">const</span> lines = buffer.split(<span class="string">'\n\n'</span>)
+  buffer = lines.pop() || <span class="string">''</span> <span class="comment">// 最后一个可能不完整</span>
+
+  <span class="keyword">for</span> (<span class="builtin">const</span> line <span class="keyword">of</span> lines) {
+    <span class="keyword">if</span> (line.startsWith(<span class="string">'data: '</span>)) {
+      <span class="builtin">const</span> dataStr = line.slice(<span class="number">6</span>)
+      <span class="keyword">if</span> (dataStr === <span class="string">'[DONE]'</span>) <span class="keyword">continue</span>
+
+      <span class="builtin">const</span> data = <span class="method">JSON</span>.<span class="method">parse</span>(dataStr)
+      <span class="keyword">if</span> (data.token) {
+        <span class="comment">// 逐字渲染到页面，实现打字机效果</span>
+        contentSpan.appendChild(
+          <span class="method">document</span>.<span class="method">createTextNode</span>(data.token)
+        )
+      }
+    }
+  }
+}</pre>
+          </div>
+        </details>
+      </div>
+
+      <!-- ============================================ -->
+      <!-- Demo 3: fetch 实现 SSE（支持自定义请求头） -->
+      <!-- ============================================ -->
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">
+            🔧 Fetch SSE <span class="badge">支持自定义请求头</span>
+          </div>
+          <div class="controls">
+            <button class="btn-start" onclick="startFetchSSE()">开始</button>
+            <button class="btn-stop" onclick="stopFetchSSE()" disabled>停止</button>
+            <button class="btn-clear" onclick="clearOutput('fetch-output')">清空</button>
+          </div>
+        </div>
+        <div class="status" id="fetch-status">
+          <span class="status-dot" id="fetch-dot"></span>
+          <span id="fetch-status-text">就绪</span>
+        </div>
+        <div class="output" id="fetch-output">
+          <div class="msg" style="color:#64748b;">点击「开始」体验 fetch 版 SSE...</div>
+        </div>
+
+        <!-- 代码区 -->
+        <details class="code-toggle">
+          <summary><span class="arrow">▶</span> 查看前后端代码</summary>
+
+          <!-- 服务端 -->
+          <div class="code-block">
+            <div class="code-header">
+              <span>server.mjs — 服务端：读取自定义请求头</span>
+              <span class="lang">Node.js</span>
+            </div>
+            <pre><span class="comment">// ===== 服务端：从请求头中读取自定义参数 =====</span>
+<span class="keyword">if</span> (pathname === <span class="string">'/fetch-sse'</span>) {
+  <span class="comment">// 从请求头中读取鉴权信息</span>
+  <span class="builtin">const</span> auth = req.headers[<span class="string">'authorization'</span>] || <span class="string">'no-auth'</span>
+  <span class="builtin">const</span> customHeader = req.headers[<span class="string">'x-custom-header'</span>] || <span class="string">'none'</span>
+
+  <span class="builtin">console</span>.<span class="method">log</span>(<span class="string">`收到自定义请求头: ${auth}, ${customHeader}`</span>)
+
+  <span class="comment">// ... 设置 SSE 响应头 ...</span>
+
+  <span class="comment">// 先发一条确认消息，告诉客户端自定义头已收到</span>
+  res.write(<span class="string">`event: auth\ndata: ${JSON.stringify({
+    auth, customHeader,
+    message: <span class="string">'自定义请求头已收到！'</span>
+  })}\n\n`</span>)
+
+  <span class="comment">// 然后正常推送消息...</span>
+  <span class="builtin">const</span> messages = [
+    <span class="string">'使用 fetch API 也能实现 SSE！'</span>,
+    <span class="string">'这样可以自定义请求头。'</span>,
+    <span class="string">'比如传递 Token 进行鉴权。'</span>,
+    <span class="string">'灵活性比 EventSource 高很多！'</span>,
+  ]
+  messages.forEach(<span class="punctuation">(</span>msg, i<span class="punctuation">)</span> <span class="keyword">=></span> {
+    setTimeout(<span class="punctuation">()</span> <span class="keyword">=></span> {
+      res.write(<span class="string">`data: ${JSON.stringify({ index: i+1, message: msg })}\n\n`</span>)
+      <span class="keyword">if</span> (i === messages.length - <span class="number">1</span>) {
+        setTimeout(<span class="punctuation">()</span> <span class="keyword">=></span> {
+          res.write(<span class="string">`event: done\ndata: 全部完成\n\n`</span>)
+          res.end()
+        }, <span class="number">300</span>)
+      }
+    }, (i + <span class="number">1</span>) * <span class="number">800</span>)
+  })
+}</pre>
+          </div>
+
+          <!-- 客户端 -->
+          <div class="code-block" style="margin-top:8px;">
+            <div class="code-header">
+              <span>index.html — 客户端：fetch 携带自定义请求头</span>
+              <span class="lang">JavaScript</span>
+            </div>
+            <pre><span class="comment">// ===== 客户端：fetch 携带自定义请求头 =====</span>
+<span class="builtin">const</span> response = <span class="keyword">await</span> <span class="method">fetch</span>(<span class="string">'/fetch-sse'</span>, {
+  headers: {
+    <span class="string">'Authorization'</span>: <span class="string">'Bearer demo-token-12345'</span>,
+    <span class="string">'X-Custom-Header'</span>: <span class="string">'sugar-sse-demo'</span>,
+    <span class="string">'Accept'</span>: <span class="string">'text/event-stream'</span>,  <span class="comment">// SSE 专用 Accept</span>
+  },
+})
+
+<span class="comment">// 拿到 body 的 ReadableStream 读取器</span>
+<span class="builtin">const</span> reader = response.body.getReader()
+<span class="builtin">const</span> decoder = <span class="keyword">new</span> <span class="method">TextDecoder</span>()
+<span class="builtin">let</span> buffer = <span class="string">''</span>
+
+<span class="keyword">while</span> (<span class="keyword">true</span>) {
+  <span class="builtin">const</span> { done, value } = <span class="keyword">await</span> reader.read()
+  <span class="keyword">if</span> (done) <span class="keyword">break</span>
+
+  buffer += decoder.decode(value, { stream: <span class="keyword">true</span> })
+  <span class="builtin">const</span> lines = buffer.split(<span class="string">'\n\n'</span>)
+  buffer = lines.pop() || <span class="string">''</span>
+
+  <span class="keyword">for</span> (<span class="builtin">const</span> line <span class="keyword">of</span> lines) {
+    <span class="comment">// 用正则提取 event 和 data 字段</span>
+    <span class="builtin">const</span> dataMatch = line.match(<span class="string">/^data: (.+)$/m</span>)
+    <span class="builtin">const</span> eventMatch = line.match(<span class="string">/^event: (.+)$/m</span>)
+
+    <span class="keyword">if</span> (dataMatch) {
+      <span class="builtin">const</span> data = <span class="method">JSON</span>.<span class="method">parse</span>(dataMatch[<span class="number">1</span>])
+      <span class="builtin">console</span>.<span class="method">log</span>(<span class="string">`[${eventMatch?.[1] || 'data'}]`</span>, data.message)
+    }
+  }
+}</pre>
+          </div>
+        </details>
+      </div>
+
+    </div>
+
+    <!-- 备注 -->
+    <div class="note-box">
+      <strong>💡 笔记：</strong><br>
+      ① <strong>EventSource API</strong> 是原生 SSE 方案，简单易用，但只支持 GET，不能带自定义请求头。<br>
+      ② <strong>Cookie 跨域可以带</strong> ✅ — 使用 <code>new EventSource(url, { withCredentials: true })</code>，服务端需设 <code>Access-Control-Allow-Credentials: true</code> 且 <code>Origin</code> 不能为 <code>*</code>。<br>
+      ③ <strong>fetch + ReadableStream</strong> 可以突破 EventSource 的限制，支持 POST、自定义头（如 Authorization）、鉴权等。<br>
+      ④ <strong>LLM 流式输出</strong> 的核心就是 SSE 或 fetch SSE，每次 push 一个 token，前端逐字渲染。<br>
+      ⑤ SSE 连接在 HTTP/1.1 下同域名最多 <strong>6 个</strong>，HTTP/2 下最多 <strong>100 个</strong>。<br>
+      ⑥ 服务端记得设 <code>Cache-Control: no-cache</code>，代理服务器要关缓冲 <code>proxy_buffering off</code>。
+    </div>
+
+    <footer>糖哥 · SSE 学习笔记 · 2026</footer>
+  </div>
+
+  <script>
+    // ============================================
+    // Demo 1: 标准 SSE (EventSource)
+    // ============================================
+    let sseSource = null
+
+    function startSSE() {
+      const output = document.getElementById('sse-output')
+      const startBtn = document.querySelectorAll('.card')[0].querySelector('.btn-start')
+      const stopBtn = document.querySelectorAll('.card')[0].querySelector('.btn-stop')
+      const dot = document.getElementById('sse-dot')
+      const statusText = document.getElementById('sse-status-text')
+
+      if (sseSource) sseSource.close()
+
+      if (output.children.length === 1 && output.children[0].textContent.includes('点击「开始」')) {
+        output.innerHTML = ''
+      }
+
+      sseSource = new EventSource('/events')
+
+      sseSource.onopen = () => {
+        dot.className = 'status-dot connected'
+        statusText.textContent = '已连接'
+        startBtn.disabled = true
+        stopBtn.disabled = false
+        appendMsg(output, '系统', 'SSE 连接已建立', 'event')
+      }
+
+      sseSource.addEventListener('connected', (e) => {
+        const data = JSON.parse(e.data)
+        appendMsg(output, '系统', data.message, 'event')
+      })
+
+      sseSource.onmessage = (e) => {
+        const data = JSON.parse(e.data)
+        appendMsg(output, '消息', `${data.message} [ID: ${data.id}]`, 'data')
+      }
+
+      sseSource.addEventListener('done', (e) => {
+        appendMsg(output, '完成', e.data, 'done')
+        dot.className = 'status-dot closed'
+        statusText.textContent = '已完成'
+        startBtn.disabled = false
+        stopBtn.disabled = true
+        sseSource.close()
+        sseSource = null
+      })
+
+      sseSource.onerror = () => {
+        dot.className = 'status-dot error'
+        statusText.textContent = '连接异常（将自动重连）'
+        appendMsg(output, '错误', '连接异常，浏览器会自动重连...', 'event')
+      }
+    }
+
+    function stopSSE() {
+      if (sseSource) {
+        sseSource.close()
+        sseSource = null
+      }
+      const dot = document.getElementById('sse-dot')
+      const statusText = document.getElementById('sse-status-text')
+      dot.className = 'status-dot closed'
+      statusText.textContent = '已手动关闭'
+      document.querySelectorAll('.card')[0].querySelector('.btn-start').disabled = false
+      document.querySelectorAll('.card')[0].querySelector('.btn-stop').disabled = true
+      appendMsg(document.getElementById('sse-output'), '系统', 'SSE 连接已手动关闭', 'event')
+    }
+
+    // ============================================
+    // Demo 2: LLM 流式输出
+    // ============================================
+    let chatReader = null
+    let chatAborted = false
+
+    async function startChat() {
+      const output = document.getElementById('chat-output')
+      const input = document.getElementById('chat-input')
+      const startBtn = document.querySelectorAll('.card')[1].querySelector('.btn-start')
+      const stopBtn = document.querySelectorAll('.card')[1].querySelector('.btn-stop')
+      const dot = document.getElementById('chat-dot')
+      const statusText = document.getElementById('chat-status-text')
+
+      const text = input.value.trim() || '你好！这是默认的流式输出演示文本。'
+
+      if (chatReader) { await chatReader.cancel(); chatReader = null }
+      chatAborted = false
+
+      output.innerHTML = ''
+      const contentSpan = document.createElement('span')
+      contentSpan.className = 'chat-content'
+      output.appendChild(contentSpan)
+      const cursor = document.createElement('span')
+      cursor.className = 'cursor'
+      output.appendChild(cursor)
+
+      dot.className = 'status-dot connected'
+      statusText.textContent = '流式输出中...'
+      startBtn.disabled = true
+      stopBtn.disabled = false
+
+      try {
+        const response = await fetch(`/chat?text=${encodeURIComponent(text)}`)
+        const reader = response.body.getReader()
+        chatReader = reader
+        const decoder = new TextDecoder()
+        let buffer = ''
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done || chatAborted) break
+
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n\n')
+          buffer = lines.pop() || ''
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const dataStr = line.slice(6)
+              if (dataStr === '[DONE]') continue
+              try {
+                const data = JSON.parse(dataStr)
+                if (data.token) {
+                  contentSpan.appendChild(document.createTextNode(data.token))
+                  output.scrollTop = output.scrollHeight
+                }
+              } catch { /* ignore */ }
+            }
+          }
+        }
+
+        cursor.style.display = 'none'
+        dot.className = 'status-dot closed'
+        statusText.textContent = '输出完成'
+        startBtn.disabled = false
+        stopBtn.disabled = true
+      } catch (err) {
+        if (!chatAborted) {
+          dot.className = 'status-dot error'
+          statusText.textContent = '连接错误'
+          startBtn.disabled = false
+          stopBtn.disabled = true
+        }
+      }
+    }
+
+    function stopChat() {
+      chatAborted = true
+      if (chatReader) { chatReader.cancel(); chatReader = null }
+      const output = document.getElementById('chat-output')
+      const cursor = output.querySelector('.cursor')
+      if (cursor) cursor.style.display = 'none'
+      const dot = document.getElementById('chat-dot')
+      const statusText = document.getElementById('chat-status-text')
+      dot.className = 'status-dot closed'
+      statusText.textContent = '已中断'
+      document.querySelectorAll('.card')[1].querySelector('.btn-start').disabled = false
+      document.querySelectorAll('.card')[1].querySelector('.btn-stop').disabled = true
+    }
+
+    // ============================================
+    // Demo 3: Fetch SSE（自定义请求头）
+    // ============================================
+    let fetchController = null
+
+    async function startFetchSSE() {
+      const output = document.getElementById('fetch-output')
+      const startBtn = document.querySelectorAll('.card')[2].querySelector('.btn-start')
+      const stopBtn = document.querySelectorAll('.card')[2].querySelector('.btn-stop')
+      const dot = document.getElementById('fetch-dot')
+      const statusText = document.getElementById('fetch-status-text')
+
+      if (output.children.length === 1 && output.children[0].textContent.includes('点击「开始」')) {
+        output.innerHTML = ''
+      }
+
+      dot.className = 'status-dot connected'
+      statusText.textContent = '已连接（带自定义请求头）'
+      startBtn.disabled = true
+      stopBtn.disabled = false
+
+      try {
+        const response = await fetch('/fetch-sse', {
+          headers: {
+            'Authorization': 'Bearer demo-token-12345',
+            'X-Custom-Header': 'sugar-sse-demo',
+            'Accept': 'text/event-stream',
+          },
+        })
+
+        fetchController = response
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n\n')
+          buffer = lines.pop() || ''
+
+          for (const line of lines) {
+            if (!line.trim()) continue
+            const dataMatch = line.match(/^data: (.+)$/m)
+            const eventMatch = line.match(/^event: (.+)$/m)
+            const event = eventMatch ? eventMatch[1] : null
+
+            if (dataMatch) {
+              const dataStr = dataMatch[1]
+              try {
+                const data = JSON.parse(dataStr)
+                const tag = event || 'data'
+                appendMsg(output, tag, data.message || JSON.stringify(data), tag === 'done' ? 'done' : 'data')
+                if (event === 'done') {
+                  dot.className = 'status-dot closed'
+                  statusText.textContent = '已完成'
+                  startBtn.disabled = false
+                  stopBtn.disabled = true
+                }
+              } catch { /* ignore */ }
+            }
+          }
+        }
+      } catch (err) {
+        if (!fetchController) {
+          dot.className = 'status-dot error'
+          statusText.textContent = '连接错误'
+          startBtn.disabled = false
+          stopBtn.disabled = true
+        }
+      }
+    }
+
+    function stopFetchSSE() {
+      if (fetchController) {
+        fetchController.body.cancel()
+        fetchController = null
+      }
+      const dot = document.getElementById('fetch-dot')
+      const statusText = document.getElementById('fetch-status-text')
+      dot.className = 'status-dot closed'
+      statusText.textContent = '已中断'
+      document.querySelectorAll('.card')[2].querySelector('.btn-start').disabled = false
+      document.querySelectorAll('.card')[2].querySelector('.btn-stop').disabled = true
+    }
+
+    // ============================================
+    // 工具函数
+    // ============================================
+    function appendMsg(container, tag, text, type) {
+      const div = document.createElement('div')
+      div.className = 'msg'
+      const time = document.createElement('span')
+      time.className = 'time'
+      time.textContent = new Date().toLocaleTimeString()
+      const tagEl = document.createElement('span')
+      tagEl.className = `tag tag-${type || 'data'}`
+      tagEl.textContent = tag
+      div.appendChild(time)
+      div.appendChild(tagEl)
+      div.appendChild(document.createTextNode(text))
+      container.appendChild(div)
+      container.scrollTop = container.scrollHeight
+    }
+
+    function clearOutput(id) {
+      const el = document.getElementById(id)
+      el.innerHTML = `<div class="msg" style="color:#64748b;">已清空</div>`
+    }
+  </script>
+</body>
+</html>
