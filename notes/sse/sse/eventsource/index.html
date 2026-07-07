@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+</head>
+<body>
+    <button id="start">连接</button>
+    <button id="stop">断开</button>
+    <br>
+    <ul id="messages">
+
+    </ul>
+    <script>
+        const startBtn = document.getElementById('start');
+        const stopBtn = document.getElementById('stop');
+        const messages = document.getElementById('messages');
+        let eventSource;
+        stopBtn.addEventListener('click', () => {
+            eventSource.close();
+        });
+        
+        startBtn.addEventListener('click', () => {
+            eventSource = new EventSource('/events');
+            eventSource.addEventListener('connect', () => {
+                console.log('connect');
+                messages.innerHTML += `<li>连接成功</li>`;
+            });
+            eventSource.onmessage = (event) => {
+                const {data,lastEventId} = event;
+                console.log('id', lastEventId, 'data', data);
+                const dataObj = JSON.parse(data);
+                console.log('dataObj', dataObj);
+                
+                messages.innerHTML += `<li>${dataObj.message}</li>`;
+            };
+            eventSource.addEventListener('done', () => {
+                messages.innerHTML += `<li>输出完成</li>`;
+                eventSource.close();
+            });
+            eventSource.addEventListener('close', () => {
+                messages.innerHTML += `<li>连接关闭</li>`;
+                eventSource.close();
+            });
+        });
+    </script>
+</body>
+</html>

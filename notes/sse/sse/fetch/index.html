@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+  </head>
+  <body>
+    <button id="start">连接</button>
+    <button id="stop">断开</button>
+    <br />
+    <ul id="messages"></ul>
+    <script>
+      const startBtn = document.getElementById("start");
+      const stopBtn = document.getElementById("stop");
+      const messages = document.getElementById("messages");
+      let abortController;
+      let aborted = false;
+      let signal;
+      stopBtn.addEventListener("click", () => {
+        if (aborted) {
+          return;
+        }
+        aborted = true;
+        if (abortController) {
+          abortController.abort();
+        }
+      });
+      startBtn.addEventListener("click", async () => {
+        aborted = false;
+        let buffer = "";
+        function parseData(data) {
+            buffer += data;
+            const lines = buffer.split("\n\n");
+            buffer = lines.pop() || "";
+            lines.forEach((line) => {
+                line = line.trim();
+                if(!line) {
+                    return;
+                }
+                const kvs = line.split('\n')
+                let obj = {};
+
+                kvs.forEach((kv) => {
+                    const [key, ...values] = kv.split(':');
+                    obj[key] = values.join(':').trim();
+                });
+                console.log(obj);
+            });
+        }
+        abortController = new AbortController();
+        signal = abortController.signal;
+        try {
+          const response = await fetch("/events", {
+            method: "POST",
+            headers: {
+              "custom-header": "custom-value",
+              "Content-Type": "text/event-stream",
+            },
+            signal,
+          });
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          while (true) {
+            let result;
+            try {
+              result = await reader.read();
+            } catch (err) {
+              if (aborted || err?.name === "AbortError") {
+                break;
+              }
+              throw err;
+            }
+            const { done, value } = result;
+            if (done || aborted) {
+              break;
+            }
+            const decoderValue = decoder.decode(value, { stream: true });
+            parseData(decoderValue);
+          }
+        } catch (err) {
+          if (err?.name !== "AbortError") {
+            console.log(err);
+          }
+        } finally {
+          messages.innerHTML += `<li>连接关闭</li>`;
+        }
+      });
+    </script>
+  </body>
+</html>
