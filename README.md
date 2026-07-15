@@ -5,7 +5,7 @@
 
 ## 目录
 1. [SKILL和MCP相关概念](./notes/sigma-lerna-skill-mcp/)
-
+2. [Agent相关概念](./notes/agent/)
 ## 学习过程用到的工具
 >很杂，组合着用
 
@@ -23,6 +23,12 @@
 * https://github.com/router-for-me/CLIProxyAPI
 * https://github.com/Wei-Shaw/sub2api
 * https://github.com/songquanpeng/one-api
+
+
+## AI Usage
+* https://github.com/vibe-cafe/vibe-usage
+* https://github.com/mm7894215/TokenTracker
+* https://github.com/robinebers/openusage
 
 ## 计划
 
