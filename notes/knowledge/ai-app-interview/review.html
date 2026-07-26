@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>知识要点 · AI 应用开发</title>
+<style>
+:root {
+  --bg: #08080c;
+  --surface: rgba(255,255,255,0.03);
+  --surface-hover: rgba(255,255,255,0.06);
+  --border: rgba(255,255,255,0.06);
+  --text: #ededef;
+  --text-secondary: rgba(255,255,255,0.55);
+  --text-tertiary: rgba(255,255,255,0.35);
+  --accent-1: #06b6d4;
+  --accent-2: #34d399;
+  --accent-gradient: linear-gradient(135deg, var(--accent-1), var(--accent-2));
+  --font-sans: -apple-system, 'SF Pro Text', system-ui, sans-serif;
+  --font-mono: 'SF Mono', 'Fira Code', ui-monospace, monospace;
+  --radius: 12px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 15% -10%, rgba(6,182,212,0.12), transparent),
+    radial-gradient(ellipse 60% 40% at 90% 10%, rgba(52,211,153,0.08), transparent);
+}
+.layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 720px);
+  gap: 32px;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 40px 24px 100px;
+  align-items: start;
+}
+.toc {
+  position: sticky;
+  top: 24px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding: 16px 14px;
+  background: rgba(8,8,12,0.75);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.toc-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--accent-1);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.toc nav { display: flex; flex-direction: column; gap: 2px; }
+.toc a {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  text-decoration: none;
+  padding: 7px 8px;
+  border-radius: 8px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  transition: color 0.2s, background 0.2s;
+  line-height: 1.35;
+}
+.toc a:hover { color: var(--text); background: var(--surface-hover); }
+.toc a .n {
+  flex-shrink: 0;
+  width: 1.6em;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+}
+.main { min-width: 0; }
+header { margin-bottom: 28px; }
+h1 {
+  font-size: 1.55rem; font-weight: 700; letter-spacing: -0.02em; line-height: 1.3;
+  background: var(--accent-gradient);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.lead { margin-top: 10px; font-size: 0.9rem; color: var(--text-secondary); line-height: 1.55; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.chip {
+  font-size: 0.7rem; padding: 4px 10px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--border); color: var(--text-secondary);
+}
+.chapter {
+  margin-bottom: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.chapter:hover { border-color: rgba(6,182,212,0.35); }
+.chapter-head {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 16px 18px 12px;
+}
+.num {
+  flex-shrink: 0; width: 32px; height: 32px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700;
+  background: rgba(6,182,212,0.12); color: var(--accent-1);
+}
+.chapter-title { font-size: 0.95rem; font-weight: 600; line-height: 1.35; }
+.chapter-body { padding: 0 18px 16px 62px; }
+@media (max-width: 480px) { .chapter-body { padding-left: 18px; } }
+.def {
+  font-size: 0.88rem; line-height: 1.55; color: var(--text);
+  padding: 10px 12px; margin-bottom: 10px;
+  border-left: 3px solid var(--accent-1);
+  background: rgba(6,182,212,0.06); border-radius: 0 8px 8px 0;
+}
+.bullets { list-style: none; }
+.bullets li {
+  position: relative; padding-left: 14px; margin-bottom: 6px;
+  font-size: 0.8rem; color: var(--text-secondary); line-height: 1.5;
+}
+.bullets li::before {
+  content: ''; position: absolute; left: 0; top: 0.55em;
+  width: 5px; height: 5px; border-radius: 50%; background: var(--accent-2);
+}
+.bullets strong { color: rgba(237,237,239,0.92); font-weight: 600; }
+table {
+  width: 100%; border-collapse: collapse; margin: 8px 0 12px;
+  font-size: 0.78rem; color: var(--text-secondary);
+}
+th, td {
+  border: 1px solid var(--border); padding: 8px 10px; text-align: left; vertical-align: top;
+}
+th { color: var(--accent-2); font-weight: 600; background: rgba(255,255,255,0.02); }
+.subh {
+  font-size: 0.8rem; font-weight: 600; color: var(--accent-1);
+  margin: 14px 0 8px; font-family: var(--font-mono);
+}
+.mega {
+  margin-top: 36px; padding: 20px;
+  border: 1px solid rgba(6,182,212,0.35);
+  border-radius: var(--radius);
+  background: rgba(6,182,212,0.05);
+}
+.mega h2 {
+  font-size: 1rem; margin-bottom: 12px;
+  background: var(--accent-gradient);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.mega pre {
+  font-family: var(--font-mono); font-size: 0.72rem; line-height: 1.65;
+  color: var(--text-secondary); white-space: pre-wrap; word-break: break-word;
+}
+footer {
+  margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--border);
+  font-size: 0.75rem; color: var(--text-tertiary); line-height: 1.5;
+}
+footer a { color: var(--accent-1); text-decoration: none; }
+@media (max-width: 840px) {
+  .layout { grid-template-columns: 1fr; gap: 20px; padding: 24px 16px 80px; }
+  .toc { position: relative; top: 0; max-height: none; }
+  .toc nav { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; }
+}
+@media (max-width: 480px) { .toc nav { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="toc" aria-label="章节目录">
+    <div class="toc-title">目录</div>
+    <nav>
+      <a href="#c1"><span class="n">01</span>应用分层</a>
+      <a href="#c2"><span class="n">02</span>Context Engineering</a>
+      <a href="#c3"><span class="n">03</span>组装策略</a>
+      <a href="#c4"><span class="n">04</span>Prompt / Tool Use</a>
+      <a href="#c5"><span class="n">05</span>Harness</a>
+      <a href="#c6"><span class="n">06</span>Agent Loop</a>
+      <a href="#c7"><span class="n">07</span>工具调用协议</a>
+      <a href="#c8"><span class="n">08</span>SKILL</a>
+      <a href="#c9"><span class="n">09</span>MCP 能力模型</a>
+      <a href="#c10"><span class="n">10</span>传输与生命周期</a>
+      <a href="#c11"><span class="n">11</span>SKILL 与 MCP</a>
+      <a href="#c12"><span class="n">12</span>安全边界</a>
+      <a href="#c13"><span class="n">13</span>端到端结构</a>
+      <a href="#mega"><span class="n">★</span>总览</a>
+    </nav>
+  </aside>
+
+  <div class="main">
+  <header>
+    <h1>AI 应用开发 · 知识要点</h1>
+    <p class="lead">客观要点汇总，供复习查阅。含 Prompt Engineering、Function Calling、Context、Harness、SKILL、MCP 与安全边界。Markdown 版见 conclusions.md。</p>
+    <div class="meta">
+      <span class="chip">13 章</span>
+      <span class="chip">PE + Agent Stack</span>
+      <span class="chip">notes/knowledge</span>
+    </div>
+  </header>
+
+  <article class="chapter" id="c1">
+    <div class="chapter-head"><div class="num">01</div><div class="chapter-title">AI 应用分层</div></div>
+    <div class="chapter-body">
+      <p class="def">Model 推理；Tools 声明并实现能力；Harness 编排运行时；Context 为输入集合；Agent 为面向目标的多步自主循环。</p>
+      <table>
+        <tr><th>层级</th><th>职责</th></tr>
+        <tr><td>Model</td><td>基于 Context 推理；生成文本或结构化 tool_calls</td></tr>
+        <tr><td>Context</td><td>单次请求提供给模型的全部输入</td></tr>
+        <tr><td>Tools</td><td>schema 声明 + 可执行实现</td></tr>
+        <tr><td>Harness</td><td>循环、执行、回写、权限、资源、Context 组装</td></tr>
+        <tr><td>Agent</td><td>目标驱动的多步循环，直至完成或强制终止</td></tr>
+      </table>
+      <ul class="bullets">
+        <li>模型不直接执行外部副作用；由 Harness 调度 Tools 完成。</li>
+        <li>与带工具的单轮对话的差异：是否具备目标驱动的多步循环。</li>
+      </ul>
+    </div>
+  </article>
+
+  <article class="chapter" id="c2">
+    <div class="chapter-head"><div class="num">02</div><div class="chapter-title">Context Engineering</div></div>
+    <div class="chapter-body">
+      <p class="def">决定窗口内放入哪些信息、顺序与篇幅，并使组合适配当前任务。</p>
+      <table>
+        <tr><th></th><th>Prompt Engineering</th><th>Context Engineering</th></tr>
+        <tr><td>关注点</td><td>指令如何编写</td><td>装载内容、容量分配、压缩与检索</td></tr>
+        <tr><td>关系</td><td>产出是 Context 的组成部分</td><td>统筹整窗信息</td></tr>
+      </table>
+      <ul class="bullets">
+        <li>参考优先级：当前用户请求 → 系统说明/已激活规范 → 工具 schema → 当前步骤证据 → 历史（可摘要）→ 大文件全文（应切片/摘要）。</li>
+        <li>优先级随任务动态调整；工作集片段与刚返回的工具结果可高于无关历史。</li>
+      </ul>
+    </div>
+  </article>
+
+  <article class="chapter" id="c3">
+    <div class="chapter-head"><div class="num">03</div><div class="chapter-title">Context 组装策略</div></div>
+    <div class="chapter-body">
+      <p class="def">在窗口容量受限时，通过切片、摘要、检索与按需记忆管理 Context 预算。</p>
+      <table>
+        <tr><th>策略</th><th>定义</th><th>适用</th></tr>
+        <tr><td>工作集切片</td><td>从已确定对象选取相关片段</td><td>目标已知</td></tr>
+        <tr><td>摘要压缩</td><td>压缩历史/长文后写回后续 Context</td><td>需保留要点、释放容量</td></tr>
+        <tr><td>RAG</td><td>索引/相似度检索后写入 top-k</td><td>语料大、位置未知</td></tr>
+        <tr><td>长期 Memory</td><td>窗外持久化，按需检索注入</td><td>跨会话信息；禁止每轮全量注入</td></tr>
+      </table>
+      <ul class="bullets">
+        <li>摘要压缩服务于 Context 预算，不同于向用户交付总结的产品功能。</li>
+      </ul>
+    </div>
+  </article>
+
+  <article class="chapter" id="c4">
+    <div class="chapter-head"><div class="num">04</div><div class="chapter-title">Prompt Engineering 与 Function Calling</div></div>
+    <div class="chapter-body">
+      <p class="def">设计模型侧指令、示例与输出约束，以及工具调用意图的生成方式；执行仍由应用侧完成。</p>
+
+      <div class="subh">4.1 消息角色</div>
+      <ul class="bullets">
+        <li><strong>system / user / assistant / tool</strong>：系统约束、用户输入、模型输出、工具结果回传。</li>
+      </ul>
+
+      <div class="subh">4.2 System Prompt 要素</div>
+      <table>
+        <tr><th>要素</th><th>说明</th></tr>
+        <tr><td>角色</td><td>身份与能力边界</td></tr>
+        <tr><td>任务</td><td>目标</td></tr>
+        <tr><td>约束</td><td>禁止项与规则</td></tr>
+        <tr><td>输出格式</td><td>结构与呈现</td></tr>
+      </table>
+      <ul class="bullets">
+        <li>抽象规则的遵循弱于对具体示例的模仿；关键格式应辅以示例或 API 级约束。</li>
+      </ul>
+
+      <div class="subh">4.3 Zero-shot / Few-shot</div>
+      <ul class="bullets">
+        <li><strong>Zero-shot</strong>：无示例直接下达任务。</li>
+        <li><strong>Few-shot</strong>：先给输入→输出示例；用于固定模式与边界情形覆盖。</li>
+      </ul>
+
+      <div class="subh">4.4 Chain of Thought</div>
+      <ul class="bullets">
+        <li>自回归生成若不展开中间步骤易跳步；强制中间推理可降低错误率。</li>
+        <li><strong>Zero-shot CoT</strong>：引导分步思考，适用于通用推理。</li>
+        <li><strong>Few-shot CoT</strong>：示例展示完整推理链，适用于领域特定推理方式。</li>
+      </ul>
+
+      <div class="subh">4.5 结构化输出</div>
+      <ul class="bullets">
+        <li>可靠性递进：Prompt 描述格式 → Few-shot 示范 → API <code>response_format</code> / constrained decoding。</li>
+        <li>严格 schema 应优先采用 API 级约束。</li>
+      </ul>
+
+      <div class="subh">4.6 Prompt 调试</div>
+      <ul class="bullets">
+        <li>定位失败样例 → 最小修改 → 回归测试（含未改动相关用例）。</li>
+      </ul>
+
+      <div class="subh">4.7 Function Calling</div>
+      <ul class="bullets">
+        <li>模型输出结构化 <code>tool_calls</code>；应用侧执行并将结果以 tool 消息写回。</li>
+        <li>Schema 应说明：能力、适用场景、限制与参数约束。</li>
+        <li>单轮通常含两次模型请求；多轮需步数上限与重复检测。</li>
+        <li>一般错误可脱敏回传模型；安全相关错误由代码层兜底。</li>
+        <li>意图选择倾向由模型完成；状态机、权限与安全校验由代码完成。</li>
+      </ul>
+    </div>
+  </article>
+
+  <article class="chapter" id="c5">
+    <div class="chapter-head"><div class="num">05</div><div class="chapter-title">Harness Engineering</div></div>
+    <div class="chapter-body">
+      <p class="def">包裹模型的运行时：保障循环可运行、可终止、可审计，并落实安全与资源策略。</p>
+      <table>
+        <tr><th>应由 Harness 强制</th><th>可由 Prompt 表达</th></tr>
+        <tr><td>循环与步数上限；工具执行/超时/重试；高危确认；配额；Context 与 Memory 管线；日志</td><td>语言、语气、详尽程度等偏好</td></tr>
+      </table>
+      <ul class="bullets">
+        <li>不可逆损害、资源失控、循环无法收敛：必须由代码强制。</li>
+      </ul>
+    </div>
+  </article>
+
+  <article class="chapter" id="c6">
+    <div class="chapter-head"><div class="num">06</div><div class="chapter-title">Agent Loop</div></div>
+    <div class="chapter-body">
+      <p class="def">感知 → 规划 → 行动 → 观察，可迭代执行。</p>
+      <table>
+        <tr><th>阶段</th><th>职责</th></tr>
+        <tr><td>感知</td><td>模型判断缺口；Harness 调度采集；结果回写后再解释</td></tr>
+        <tr><td>规划</td><td>模型拆解步骤</td></tr>
+        <tr><td>行动</td><td>模型发出 tool_calls；Harness 调度；Tools 产生副作用</td></tr>
+        <tr><td>观察</td><td>结果写回 Context；模型评估是否达成目标</td></tr>
+      </table>
+      <ul class="bullets">
+        <li>终止：模型判定完成，或 Harness 触发最大步数/超时/用户取消。</li>
+      </ul>
+    </div>
+  </article>
+
+  <article class="chapter" id="c7">
+    <div class="chapter-head"><div class="num">07</div><div class="chapter-title">工具调用协议位置</div></div>
+    <div class="chapter-body">
+      <p class="def">执行依据为结构化 tool_calls，而非自然语言思考文本。</p>
+      <ul class="bullets">
+        <li>流程：tool_calls → Harness 调度 Tool → 结果写入 Context → 再次请求模型。</li>
+        <li>仅有自然语言意图、无 tool_calls 时，不得执行外部操作。</li>
+      </ul>
+    </div>
+  </article>
+
+  <article class="chapter" id="c8">
+    <div class="chapter-head"><div class="num">08</div><div class="chapter-title">SKILL</div></div>
+    <div class="chapter-body">
+      <p class="def">任务向流程规范（SOP）；由 Harness 发现并注入 Context；通常不是可 call 的业务工具。</p>
+      <ul class="bullets">
+        <li><strong>渐进披露</strong>：目录元数据常驻；全文按需加载。</li>
+        <li><strong>触发</strong>：用户显式指定、Harness 匹配、模型依据目录选择后加载。</li>
+        <li>注入后模型按规范调用普通 Tools 或继续推理。</li>
+      </ul>
+    </div>
+  </article>
+
+  <article class="chapter" id="c9">
+    <div class="chapter-head"><div class="num">09</div><div class="chapter-title">MCP 能力模型</div></div>
+    <div class="chapter-body">
+      <p class="def">Host 与外部能力进程之间的标准协议；模型不直连 Server。</p>
+      <table>
+        <tr><th>能力</th><th>定义</th></tr>
+        <tr><td>Tools</td><td>可调用动作 + schema；Server 执行</td></tr>
+        <tr><td>Resources</td><td>可读取数据/文档，作为 Context 原料</td></tr>
+        <tr><td>Prompts</td><td>可参数化提示模板</td></tr>
+      </table>
+      <ul class="bullets">
+        <li>拓扑：用户 → Host（含 Client）↔ Model；Client → Server → 外部系统。</li>
+      </ul>
+    </div>
+  </article>
+
+  <article class="chapter" id="c10">
+    <div class="chapter-head"><div class="num">10</div><div class="chapter-title">MCP 传输与生命周期</div></div>
+    <div class="chapter-body">
+      <p class="def">本地常见 stdio（子进程 + JSON-RPC）；远程多采用 Streamable HTTP 等。</p>
+      <ul class="bullets">
+        <li><strong>Spawn</strong>：Host 启动 Server 并建立 Client。</li>
+        <li><strong>Initialize</strong>：握手，协商版本与能力。</li>
+        <li><strong>List</strong>：枚举能力声明并纳入 Context。</li>
+        <li><strong>Call</strong>：Client 发起调用，Server 执行并返回。</li>
+        <li>stdio 下 stdout 专用于协议；日志写入 stderr。</li>
+        <li>参考实现：notes/mcp-demo/。</li>
+      </ul>
+    </div>
+  </article>
+
+  <article class="chapter" id="c11">
+    <div class="chapter-head"><div class="num">11</div><div class="chapter-title">SKILL 与 MCP</div></div>
+    <div class="chapter-body">
+      <p class="def">SKILL 规定如何完成任务；MCP Tool 提供接触外部系统的可执行能力；二者可组合。</p>
+      <table>
+        <tr><th></th><th>SKILL</th><th>MCP Tool</th></tr>
+        <tr><td>路径</td><td>规范文本注入 Context</td><td>schema 入窗后经 tool_calls 由 Client 调用</td></tr>
+        <tr><td>作用</td><td>流程与准则</td><td>外部副作用</td></tr>
+      </table>
+    </div>
+  </article>
+
+  <article class="chapter" id="c12">
+    <div class="chapter-head"><div class="num">12</div><div class="chapter-title">权限、沙箱与安全边界</div></div>
+    <div class="chapter-body">
+      <p class="def">硬约束位于 Harness 与凭证设计；Prompt 安全说明为软约束。</p>
+      <table>
+        <tr><th>风险</th><th>控制面</th></tr>
+        <tr><td>高危本地操作</td><td>Harness：拦截、确认、沙箱</td></tr>
+        <tr><td>凭证权限过大</td><td>最小权限 scope；敏感操作可再审批</td></tr>
+        <tr><td>敏感信息外泄</td><td>禁读/脱敏/拦外发；凭证不写入模型 Context</td></tr>
+        <tr><td>能力授予过宽</td><td>工具白名单与沙箱，最小能力集</td></tr>
+      </table>
+    </div>
+  </article>
+
+  <article class="chapter" id="c13">
+    <div class="chapter-head"><div class="num">13</div><div class="chapter-title">端到端结构</div></div>
+    <div class="chapter-body">
+      <p class="def">编码助手类任务的参考流水线：组窗 → 决策与工具循环 → 外部变更（如 PR）→ 强制安全与终止策略。</p>
+      <ul class="bullets">
+        <li>Harness 组装 Context（系统说明、项目约束、工具/MCP schema、SKILL 目录或全文、代码与日志片段）。</li>
+        <li>模型规划并产生 tool_calls；Harness 执行回写；循环至完成或强制终止。</li>
+        <li>经 MCP 或平台工具完成远端操作，并向用户返回结论。</li>
+        <li>高危确认、步数/超时、凭证与沙箱全程生效；容量不足时摘要或切片。</li>
+      </ul>
+    </div>
+  </article>
+
+  <section class="mega" id="mega">
+    <h2>总览</h2>
+    <pre>用户
+  → Host / Harness（组装 Context）
+  ↔ Model（推理 / tool_calls）
+       ↓
+  本地 Tools 或 MCP Client → Initialize → List → Call → Server → 外部系统
+       ↓
+  结果写入 Context → 再次请求 Model → … → 完成或强制终止
+
+Prompt Engineering：指令、示例、结构化输出、工具调用意图（生成侧）
+Context Engineering：整窗信息的选择、排序、压缩与检索
+SKILL：流程规范注入 Context
+MCP：Tools / Resources / Prompts
+安全：Harness 与凭证硬约束；Prompt 为辅助</pre>
+  </section>
+
+  <footer>
+    <a href="./conclusions.md">conclusions.md</a> ·
+    <a href="../../mcp-demo/">mcp-demo</a> ·
+    <a href="../../../sigma/ai-app-dev-interview/visuals/">visuals</a> ·
+    <a href="../README.md">knowledge 索引</a>
+  </footer>
+  </div>
+</div>
+</body>
+</html>
