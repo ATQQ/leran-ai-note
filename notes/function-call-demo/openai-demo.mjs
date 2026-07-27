@@ -31,6 +31,7 @@ const tools = [
           city: { type: "string", description: "城市名，如 北京、上海" },
         },
         required: ["city"],
+        // JSON Schema：禁止声明之外的额外字段，减少模型乱传参
         additionalProperties: false,
       },
     },
@@ -47,6 +48,7 @@ const tools = [
           b: { type: "number" },
         },
         required: ["a", "b"],
+        // 同上：只允许 a/b，不允许多余键
         additionalProperties: false,
       },
     },
@@ -67,6 +69,8 @@ async function chatCompletions(messages, roundLabel) {
     model: MODEL,
     messages,
     tools,
+    // auto=模型自己决定是否调工具；none=禁止；required=必须调；
+    // 也可指定某个函数：{ type:"function", function:{ name:"get_weather" } }
     tool_choice: "auto",
   };
 
@@ -115,6 +119,11 @@ async function chatCompletions(messages, roundLabel) {
   }
 
   const msg = data.choices?.[0]?.message;
+  // reasoning_content：部分推理模型 / 中转站扩展字段（非官方 Chat Completions 标准）
+  // 表示模型「思考过程」文本；面向用户的答案在 content，工具调用在 tool_calls
+  const hasReasoning =
+    typeof msg?.reasoning_content === "string" && msg.reasoning_content.length > 0;
+
   trace.addStep({
     phase: "model_response",
     title: `${roundLabel} · 模型响应`,
@@ -125,13 +134,19 @@ async function chatCompletions(messages, roundLabel) {
     direction: "in",
     payload: {
       httpStatus: res.status,
+      // token 用量：prompt/completion/total，学习回放时需要看，不做脱敏
       usage: data.usage ?? null,
       message: msg,
       rawChoice: data.choices?.[0] ?? null,
     },
-    note: msg?.tool_calls?.length
-      ? "执行依据是结构化 tool_calls，不是思考文本"
-      : null,
+    note: [
+      msg?.tool_calls?.length ? "执行依据是结构化 tool_calls，不是思考文本" : null,
+      hasReasoning
+        ? "含 reasoning_content：这是推理过程，不是最终回复；一般不必当用户可见答案展示"
+        : null,
+    ]
+      .filter(Boolean)
+      .join("；") || null,
   });
 
   return { data, msg };

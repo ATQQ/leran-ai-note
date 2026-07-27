@@ -188,6 +188,58 @@ pre {
 .hint {
   margin-top: 14px; font-size: 0.78rem; color: var(--dim); line-height: 1.5; text-align: center;
 }
+.glossary {
+  margin-top: 22px; padding: 16px 18px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.glossary h2 {
+  font-size: 0.78rem; color: var(--accent); letter-spacing: .04em;
+  text-transform: uppercase; margin-bottom: 12px;
+}
+.glossary dl { display: grid; gap: 10px; }
+.glossary dt {
+  font-family: var(--mono); font-size: 0.75rem; color: var(--accent2); margin-bottom: 2px;
+}
+.glossary dd { font-size: 0.8rem; color: var(--muted); line-height: 1.55; }
+.panel-h .hint-inline {
+  font-family: var(--font); font-size: 0.68rem; color: var(--dim); font-weight: normal;
+}
+.welcome {
+  width: 100%; max-width: 560px; text-align: left;
+}
+.welcome h3 { font-size: 1.05rem; margin-bottom: 8px; color: var(--text); }
+.welcome > p { color: var(--muted); font-size: 0.86rem; line-height: 1.5; margin-bottom: 16px; }
+.pick-grid { display: grid; gap: 10px; }
+.pick {
+  appearance: none; width: 100%; text-align: left; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px;
+  background: rgba(0,0,0,0.28); color: var(--text);
+  transition: border-color .2s, background .2s, transform .15s;
+}
+.pick:hover:not(:disabled) {
+  border-color: rgba(6,182,212,0.45); background: rgba(6,182,212,0.08);
+  transform: translateY(-1px);
+}
+.pick:disabled { opacity: 0.4; cursor: not-allowed; }
+.pick .pick-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 0.92rem; font-weight: 600; margin-bottom: 4px;
+}
+.pick .pick-title .badge {
+  font-family: var(--mono); font-size: 0.65rem; font-weight: 500;
+  padding: 2px 7px; border-radius: 999px;
+  background: rgba(52,211,153,0.15); color: var(--accent2); border: 1px solid rgba(52,211,153,0.35);
+}
+.pick .pick-title .badge.miss {
+  background: rgba(251,113,133,0.12); color: var(--rose); border-color: rgba(251,113,133,0.35);
+}
+.pick .pick-desc { font-size: 0.78rem; color: var(--muted); line-height: 1.45; }
+.pick.openai:hover:not(:disabled) { border-color: rgba(167,139,250,0.5); background: rgba(167,139,250,0.08); }
+.pick.anthropic:hover:not(:disabled) { border-color: rgba(251,191,36,0.45); background: rgba(251,191,36,0.08); }
+.welcome .more { margin-top: 14px; font-size: 0.75rem; color: var(--dim); line-height: 1.5; }
+.btn.source-on {
+  border-color: rgba(6,182,212,0.5); background: rgba(6,182,212,0.15); color: #7dd3fc;
+}
 </style>
 </head>
 <body>
@@ -200,9 +252,10 @@ pre {
   <div class="toolbar">
     <label>加载轨迹</label>
     <input id="file" type="file" accept="application/json,.json">
-    <button class="btn" type="button" id="btn-sample">加载示例</button>
-    <button class="btn" type="button" id="btn-openai">尝试 openai-latest</button>
-    <button class="btn" type="button" id="btn-anthropic">尝试 anthropic-latest</button>
+    <button class="btn" type="button" id="btn-home">选源</button>
+    <button class="btn" type="button" id="btn-openai" data-source="openai">OpenAI</button>
+    <button class="btn" type="button" id="btn-anthropic" data-source="anthropic">Anthropic</button>
+    <button class="btn" type="button" id="btn-sample" data-source="sample">离线示例</button>
     <div class="meta-chips" id="meta"></div>
   </div>
 
@@ -211,10 +264,7 @@ pre {
       <h2>Steps</h2>
       <div id="rail"></div>
     </aside>
-    <section class="stage empty" id="stage">
-      请先运行 <code>node openai-demo.mjs</code> 或 <code>node anthropic-demo.mjs</code>，<br>
-      再选择 <code>traces/*-latest.json</code>；亦可先点「加载示例」。
-    </section>
+    <section class="stage empty" id="stage">正在探测本地轨迹…</section>
   </div>
 
   <div class="controls" id="controls" hidden>
@@ -225,6 +275,20 @@ pre {
     <span class="kbd">← → · Space</span>
   </div>
   <p class="hint">若直接用浏览器打开本页导致无法 fetch 本地 traces，请用文件选择器加载 JSON，或执行 <code>npm run viewer</code> 后访问。</p>
+
+  <section class="glossary">
+    <h2>字段说明</h2>
+    <dl>
+      <dt>usage</dt>
+      <dd>本轮 API 返回的 token 统计（如 <code>prompt_tokens</code> / <code>completion_tokens</code> / <code>total_tokens</code>）。不是密钥，回放时会完整展示，便于对照成本与上下文长度。</dd>
+      <dt>tool_choice</dt>
+      <dd>控制「要不要 / 必须调哪个工具」。OpenAI：<code>auto</code>（默认，模型自决）、<code>none</code>（禁止）、<code>required</code>（必须调）、或指定某个函数。Anthropic：<code>{type:"auto"|"any"|"tool"|"none"}</code>。</dd>
+      <dt>additionalProperties</dt>
+      <dd>工具参数的 JSON Schema 开关。设为 <code>false</code> 时禁止声明之外的多余字段，减少模型乱传参（例如多塞一个无关 key）。</dd>
+      <dt>reasoning_content</dt>
+      <dd>部分推理模型或中转站在 assistant 消息上扩展的字段，表示<strong>思考过程</strong>文本。用户可见答案一般在 <code>content</code>；是否调工具看 <code>tool_calls</code>。官方标准 Chat Completions 不一定有此字段，回放时若存在会单独展开。</dd>
+    </dl>
+  </section>
 </div>
 
 <script>
@@ -233,6 +297,41 @@ let trace = null;
 let index = 0;
 let playing = false;
 let timer = null;
+let currentSource = null;
+
+/** 可一键加载的轨迹源（demo 跑完会写 *-latest.json） */
+const SOURCES = {
+  openai: {
+    id: "openai",
+    label: "OpenAI",
+    url: "./traces/openai-latest.json",
+    file: "traces/openai-latest.json",
+    how: "npm run openai",
+    desc: "Chat Completions · tool_calls / role=tool",
+  },
+  anthropic: {
+    id: "anthropic",
+    label: "Anthropic",
+    url: "./traces/anthropic-latest.json",
+    file: "traces/anthropic-latest.json",
+    how: "npm run anthropic",
+    desc: "Messages · tool_use / tool_result",
+  },
+  sample: {
+    id: "sample",
+    label: "离线示例",
+    url: "./traces/sample-openai.json",
+    file: "traces/sample-openai.json",
+    how: null,
+    desc: "仓库自带的 OpenAI 样例，无需先跑 demo",
+  },
+};
+
+const availability = {
+  openai: false,
+  anthropic: false,
+  sample: false,
+};
 
 const PHASE_ACTOR = {
   init: "harness",
@@ -248,29 +347,132 @@ function actorClass(step) {
   return step.actor || PHASE_ACTOR[step.phase] || "harness";
 }
 
+async function probe(url) {
+  try {
+    const res = await fetch(url, { method: "GET", cache: "no-store" });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function refreshAvailability() {
+  const entries = Object.values(SOURCES);
+  const results = await Promise.all(entries.map((s) => probe(s.url)));
+  entries.forEach((s, i) => {
+    availability[s.id] = results[i];
+  });
+  syncToolbar();
+  return availability;
+}
+
+function syncToolbar() {
+  for (const id of ["openai", "anthropic", "sample"]) {
+    const btn = $(`btn-${id}`);
+    if (!btn) continue;
+    btn.disabled = !availability[id];
+    btn.title = availability[id]
+      ? `加载 ${SOURCES[id].file}`
+      : `未找到 ${SOURCES[id].file}${SOURCES[id].how ? `，先执行 ${SOURCES[id].how}` : ""}`;
+    btn.classList.toggle("source-on", currentSource === id);
+  }
+}
+
 async function loadUrl(url) {
-  const res = await fetch(url);
+  const res = await fetch(url, { cache: "no-store" });
   if (!res.ok) throw new Error(`无法加载 ${url}（${res.status}）`);
   return res.json();
 }
 
-function setTrace(data) {
+async function loadSource(id) {
+  const src = SOURCES[id];
+  if (!src) return;
+  try {
+    setTrace(await loadUrl(src.url), id);
+  } catch (err) {
+    availability[id] = false;
+    syncToolbar();
+    alert(
+      `${err.message}\n\n请确认已用 npm run viewer 打开本页，且存在 ${src.file}` +
+        (src.how ? `\n可先执行：${src.how}` : "")
+    );
+    showWelcome();
+  }
+}
+
+function setTrace(data, sourceId = null) {
   if (!data?.steps?.length) throw new Error("JSON 中没有 steps");
   trace = data;
+  currentSource = sourceId;
   index = 0;
   playing = false;
   stopPlay();
   $("controls").hidden = false;
   $("play").textContent = "播放";
   $("play").classList.remove("active");
+  syncToolbar();
   renderMeta();
   renderRail();
   renderStep(true);
 }
 
+function showWelcome() {
+  trace = null;
+  currentSource = null;
+  $("controls").hidden = true;
+  $("rail").innerHTML = "";
+  $("meta").innerHTML = "";
+  stopPlay();
+  syncToolbar();
+
+  const card = (id, extraClass = "") => {
+    const s = SOURCES[id];
+    const ok = availability[id];
+    return `
+      <button type="button" class="pick ${extraClass}" data-load="${id}" ${ok ? "" : "disabled"}>
+        <div class="pick-title">
+          ${esc(s.label)}
+          <span class="badge ${ok ? "" : "miss"}">${ok ? "可加载" : "未找到"}</span>
+        </div>
+        <div class="pick-desc">
+          ${esc(s.desc)}<br>
+          <code>${esc(s.file)}</code>
+          ${!ok && s.how ? ` · 先跑 <code>${esc(s.how)}</code>` : ""}
+        </div>
+      </button>`;
+  };
+
+  const anyLatest = availability.openai || availability.anthropic;
+  $("stage").className = "stage empty";
+  $("stage").innerHTML = `
+    <div class="welcome">
+      <h3>选择要回放的轨迹</h3>
+      <p>${
+        anyLatest
+          ? "检测到本地 demo 产物，点下方卡片直接加载对照 OpenAI / Anthropic 协议差异。"
+          : "还没有 *-latest.json。可先跑 demo，或先看离线示例。"
+      }</p>
+      <div class="pick-grid">
+        ${card("openai", "openai")}
+        ${card("anthropic", "anthropic")}
+        ${card("sample")}
+      </div>
+      <p class="more">
+        也可用顶部「选择文件」加载任意 traces/*.json。<br>
+        需通过 <code>npm run viewer</code> 访问，否则浏览器可能拦截本地 fetch。
+      </p>
+    </div>`;
+
+  $("stage").querySelectorAll("[data-load]").forEach((el) => {
+    el.addEventListener("click", () => loadSource(el.dataset.load));
+  });
+}
+
 function renderMeta() {
   const m = trace.meta || {};
+  const src = currentSource && SOURCES[currentSource];
   $("meta").innerHTML = [
+    src && `<span class="chip">${esc(src.label)}</span>`,
     m.provider && `<span class="chip">${esc(m.provider)}</span>`,
     m.model && `<span class="chip">${esc(m.model)}</span>`,
     `<span class="chip">${trace.steps.length} steps</span>`,
@@ -343,17 +545,39 @@ function renderPanels(step) {
   if (p == null) return `<div class="panel"><div class="panel-h">payload</div><pre>(empty)</pre></div>`;
 
   if (step.phase === "request_model" && p.body) {
+    const bodyHint = explainRequestBody(p.body);
     return `
       <div class="panel"><div class="panel-h">Request headers <span class="tag">out</span></div>
         <pre>${esc(JSON.stringify({ url: p.url, method: p.method, headers: p.headers }, null, 2))}</pre></div>
-      <div class="panel"><div class="panel-h">Request body <span class="tag">out</span></div>
+      <div class="panel"><div class="panel-h">Request body <span class="tag">out</span>
+        ${bodyHint ? `<span class="hint-inline">${esc(bodyHint)}</span>` : ""}</div>
         <pre>${esc(JSON.stringify(p.body, null, 2))}</pre></div>`;
   }
   if (step.phase === "model_response") {
+    const msg = p.message ?? null;
+    const reasoning =
+      msg && typeof msg.reasoning_content === "string" && msg.reasoning_content.length
+        ? msg.reasoning_content
+        : null;
+    // 展示给面板的 message：去掉 reasoning_content，避免和专用面板重复刷屏
+    const msgView = msg
+      ? Object.fromEntries(Object.entries(msg).filter(([k]) => k !== "reasoning_content"))
+      : (p.content ?? p);
+
     return `
-      <div class="panel"><div class="panel-h">Model message <span class="tag">in</span></div>
-        <pre>${esc(JSON.stringify(p.message ?? p.content ?? p, null, 2))}</pre></div>
-      ${p.usage ? `<div class="panel"><div class="panel-h">usage</div><pre>${esc(JSON.stringify(p.usage, null, 2))}</pre></div>` : ""}`;
+      <div class="panel"><div class="panel-h">Model message <span class="tag">in</span>
+        <span class="hint-inline">content=可见回复 · tool_calls=结构化调用</span></div>
+        <pre>${esc(JSON.stringify(msgView, null, 2))}</pre></div>
+      ${reasoning != null ? `
+      <div class="panel"><div class="panel-h">reasoning_content <span class="tag">thinking</span>
+        <span class="hint-inline">推理过程，不是最终答案</span></div>
+        <pre>${esc(reasoning)}</pre></div>` : ""}
+      <div class="panel"><div class="panel-h">usage <span class="tag">tokens</span>
+        <span class="hint-inline">非敏感 · 本轮 token 用量</span></div>
+        <pre>${esc(JSON.stringify(p.usage ?? null, null, 2))}</pre></div>
+      ${p.rawChoice || p.httpStatus != null ? `
+      <div class="panel"><div class="panel-h">meta <span class="tag">in</span></div>
+        <pre>${esc(JSON.stringify({ httpStatus: p.httpStatus ?? null, rawChoice: p.rawChoice ?? null }, null, 2))}</pre></div>` : ""}`;
   }
   if (step.phase === "append_tool_result" && p.appended) {
     return `
@@ -362,8 +586,31 @@ function renderPanels(step) {
       <div class="panel"><div class="panel-h">Tool result</div>
         <pre>${esc(JSON.stringify(p.result, null, 2))}</pre></div>`;
   }
+  if (step.phase === "init" && p.tools) {
+    return `
+      <div class="panel"><div class="panel-h">messages</div>
+        <pre>${esc(JSON.stringify(p.messages, null, 2))}</pre></div>
+      <div class="panel"><div class="panel-h">tools schema
+        <span class="hint-inline">看 parameters.additionalProperties</span></div>
+        <pre>${esc(JSON.stringify(p.tools, null, 2))}</pre></div>`;
+  }
   return `<div class="panel"><div class="panel-h">payload <span class="tag">${esc(step.direction || "")}</span></div>
     <pre>${esc(JSON.stringify(p, null, 2))}</pre></div>`;
+}
+
+/** 请求体里挑几个关键字段给一句话提示 */
+function explainRequestBody(body) {
+  const bits = [];
+  if (body.tool_choice != null) {
+    bits.push(`tool_choice=${typeof body.tool_choice === "string" ? body.tool_choice : JSON.stringify(body.tool_choice)} → 是否/强制调工具`);
+  }
+  const schemas = body.tools || [];
+  const hasAddl = schemas.some((t) => {
+    const schema = t?.function?.parameters || t?.input_schema;
+    return schema && Object.prototype.hasOwnProperty.call(schema, "additionalProperties");
+  });
+  if (hasAddl) bits.push("tools.*.additionalProperties=false → 禁止多余参数");
+  return bits.join(" · ");
 }
 
 function esc(s) {
@@ -410,35 +657,19 @@ $("file").addEventListener("change", async (e) => {
   const f = e.target.files?.[0];
   if (!f) return;
   try {
-    setTrace(JSON.parse(await f.text()));
+    setTrace(JSON.parse(await f.text()), null);
   } catch (err) {
     alert("加载失败：" + err.message);
   }
 });
 
-$("btn-sample").addEventListener("click", async () => {
-  try {
-    setTrace(await loadUrl("./traces/sample-openai.json"));
-  } catch (err) {
-    alert(err.message + "\n可改用「选择文件」加载 traces/sample-openai.json");
-  }
+$("btn-home").addEventListener("click", async () => {
+  await refreshAvailability();
+  showWelcome();
 });
-
-$("btn-openai").addEventListener("click", async () => {
-  try {
-    setTrace(await loadUrl("./traces/openai-latest.json"));
-  } catch (err) {
-    alert("未找到 openai-latest.json。请先运行 node openai-demo.mjs，或用文件选择器加载。");
-  }
-});
-
-$("btn-anthropic").addEventListener("click", async () => {
-  try {
-    setTrace(await loadUrl("./traces/anthropic-latest.json"));
-  } catch (err) {
-    alert("未找到 anthropic-latest.json。请先运行 node anthropic-demo.mjs，或用文件选择器加载。");
-  }
-});
+$("btn-sample").addEventListener("click", () => loadSource("sample"));
+$("btn-openai").addEventListener("click", () => loadSource("openai"));
+$("btn-anthropic").addEventListener("click", () => loadSource("anthropic"));
 
 $("prev").addEventListener("click", () => { stopPlay(); go(-1); });
 $("next").addEventListener("click", () => { stopPlay(); go(1); });
@@ -450,6 +681,12 @@ window.addEventListener("keydown", (e) => {
   if (e.key === "ArrowRight") { e.preventDefault(); stopPlay(); go(1); }
   if (e.key === " ") { e.preventDefault(); togglePlay(); }
 });
+
+// 首屏：探测 traces 后展示选源引导（有 latest 则优先提示）
+(async () => {
+  await refreshAvailability();
+  showWelcome();
+})();
 </script>
 </body>
 </html>

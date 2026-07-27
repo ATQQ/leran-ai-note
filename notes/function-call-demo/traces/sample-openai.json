@@ -100,6 +100,12 @@
       "direction": "in",
       "note": "执行依据是结构化 tool_calls，不是思考文本",
       "payload": {
+        "httpStatus": 200,
+        "usage": {
+          "prompt_tokens": 186,
+          "completion_tokens": 64,
+          "total_tokens": 250
+        },
         "message": {
           "role": "assistant",
           "content": null,
@@ -193,6 +199,7 @@
         "url": "https://example.com/v1/chat/completions",
         "body": {
           "model": "gpt-4o-mini",
+          "tool_choice": "auto",
           "messages": [
             { "role": "system", "content": "…" },
             { "role": "user", "content": "…" },
@@ -219,6 +226,12 @@
       "actor": "model",
       "direction": "in",
       "payload": {
+        "httpStatus": 200,
+        "usage": {
+          "prompt_tokens": 268,
+          "completion_tokens": 28,
+          "total_tokens": 296
+        },
         "message": {
           "role": "assistant",
           "content": "深圳现在雷阵雨，约 33°C；12+30=42。"

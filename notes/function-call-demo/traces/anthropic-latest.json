@@ -1,0 +1,545 @@
+{
+  "version": 1,
+  "meta": {
+    "provider": "anthropic",
+    "model": "ark-code-latest",
+    "baseUrl": "https://ark.cn-beijing.volces.com/api/coding",
+    "userAgent": "claude-cli/2.1.170 (external, sdk-ts, agent-sdk/0.3.170)",
+    "startedAt": "2026-07-27T08:11:02.997Z",
+    "finishedAt": "2026-07-27T08:11:51.311Z",
+    "finalAnswer": "**总结：**\n\n1. 🌩️ **深圳天气**：当前气温 **33°C**，有**雷阵雨**，出门记得带伞！\n2. ➕ **算术结果**：**12 + 30 = 42**。\n\n简单说就是：深圳今天雷阵雨、33度，12加30等于42。"
+  },
+  "toolsSchema": [
+    {
+      "name": "get_weather",
+      "description": "查询指定城市的当前天气（演示用本地假数据）",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string",
+            "description": "城市名，如 北京、上海"
+          }
+        },
+        "required": [
+          "city"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "add",
+      "description": "计算两个数字之和",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "number"
+          },
+          "b": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "a",
+          "b"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": 1,
+      "phase": "init",
+      "title": "初始化 Context",
+      "summary": "Anthropic：system 为顶层字段；messages 从 user 开始",
+      "actor": "harness",
+      "direction": "local",
+      "note": null,
+      "payload": {
+        "system": "你是助手。需要天气或加法时必须调用工具，不要编造工具结果。",
+        "messages": [
+          {
+            "role": "user",
+            "content": "帮我查一下深圳的天气，再用工具算一下 12 加 30，最后用中文简短总结。"
+          }
+        ],
+        "tools": [
+          {
+            "name": "get_weather",
+            "description": "查询指定城市的当前天气（演示用本地假数据）",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "city": {
+                  "type": "string",
+                  "description": "城市名，如 北京、上海"
+                }
+              },
+              "required": [
+                "city"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "name": "add",
+            "description": "计算两个数字之和",
+            "input_schema": {
+              "type": "object",
+              "properties": {
+                "a": {
+                  "type": "number"
+                },
+                "b": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "a",
+                "b"
+              ],
+              "additionalProperties": false
+            }
+          }
+        ]
+      },
+      "at": "2026-07-27T08:11:03.004Z"
+    },
+    {
+      "id": 2,
+      "phase": "request_model",
+      "title": "ROUND1 · 请求模型",
+      "summary": "POST https://ark.cn-beijing.volces.com/api/coding/v1/messages，system + messages + tools(input_schema)",
+      "actor": "harness",
+      "direction": "out",
+      "note": null,
+      "payload": {
+        "method": "POST",
+        "url": "https://ark.cn-beijing.volces.com/api/coding/v1/messages",
+        "headers": {
+          "x-api-key": "[REDACTED]",
+          "anthropic-version": "2023-06-01",
+          "Content-Type": "application/json",
+          "User-Agent": "claude-cli/2.1.170 (external, sdk-ts, agent-sdk/0.3.170)"
+        },
+        "body": {
+          "model": "ark-code-latest",
+          "max_tokens": "[REDACTED]",
+          "tools": [
+            {
+              "name": "get_weather",
+              "description": "查询指定城市的当前天气（演示用本地假数据）",
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string",
+                    "description": "城市名，如 北京、上海"
+                  }
+                },
+                "required": [
+                  "city"
+                ],
+                "additionalProperties": false
+              }
+            },
+            {
+              "name": "add",
+              "description": "计算两个数字之和",
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "a": {
+                    "type": "number"
+                  },
+                  "b": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "a",
+                  "b"
+                ],
+                "additionalProperties": false
+              }
+            }
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "帮我查一下深圳的天气，再用工具算一下 12 加 30，最后用中文简短总结。"
+            }
+          ],
+          "system": "你是助手。需要天气或加法时必须调用工具，不要编造工具结果。",
+          "tool_choice": {
+            "type": "auto"
+          }
+        }
+      },
+      "at": "2026-07-27T08:11:03.004Z"
+    },
+    {
+      "id": 3,
+      "phase": "model_response",
+      "title": "ROUND1 · 模型响应",
+      "summary": "stop_reason=tool_use，含 2 个 tool_use",
+      "actor": "model",
+      "direction": "in",
+      "note": "Anthropic：调用意图在 content[] 的 tool_use 块中",
+      "payload": {
+        "httpStatus": 200,
+        "id": "021785139863445a1b170fc911988aa69fdfa08a353ab274d538f",
+        "stop_reason": "tool_use",
+        "usage": {
+          "input_tokens": "[REDACTED]",
+          "output_tokens": "[REDACTED]",
+          "cache_read_input_tokens": "[REDACTED]"
+        },
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "用户想要我：\n1. 查询深圳的天气\n2. 计算 12 + 30\n3. 用中文简短总结\n\n这两个工具调用是独立的，可以同时进行。"
+          },
+          {
+            "type": "text",
+            "text": "好，我同时帮你查天气和做加法。\n\n"
+          },
+          {
+            "type": "tool_use",
+            "id": "call_e01e4372895e4fed9e95a49d",
+            "name": "get_weather",
+            "input": {
+              "city": "深圳"
+            }
+          },
+          {
+            "type": "tool_use",
+            "id": "call_506091cec2ca4a5dbecd8e03",
+            "name": "add",
+            "input": {
+              "a": 12,
+              "b": 30
+            }
+          }
+        ]
+      },
+      "at": "2026-07-27T08:11:08.014Z"
+    },
+    {
+      "id": 4,
+      "phase": "execute_tool",
+      "title": "执行工具 · get_weather",
+      "summary": "id=call_e01e4372895e4fed9e95a49d",
+      "actor": "tool",
+      "direction": "local",
+      "note": null,
+      "payload": {
+        "tool_use_id": "call_e01e4372895e4fed9e95a49d",
+        "name": "get_weather",
+        "input": {
+          "city": "深圳"
+        }
+      },
+      "at": "2026-07-27T08:11:08.014Z"
+    },
+    {
+      "id": 5,
+      "phase": "append_tool_result",
+      "title": "组装 tool_result · get_weather",
+      "summary": "将写入下一条 user.content[]（Anthropic 格式）",
+      "actor": "harness",
+      "direction": "local",
+      "note": null,
+      "payload": {
+        "toolResult": {
+          "type": "tool_result",
+          "tool_use_id": "call_e01e4372895e4fed9e95a49d",
+          "content": "{\"city\":\"深圳\",\"temp_c\":33,\"condition\":\"雷阵雨\",\"source\":\"local-mock\"}"
+        },
+        "result": {
+          "city": "深圳",
+          "temp_c": 33,
+          "condition": "雷阵雨",
+          "source": "local-mock"
+        }
+      },
+      "at": "2026-07-27T08:11:08.014Z"
+    },
+    {
+      "id": 6,
+      "phase": "execute_tool",
+      "title": "执行工具 · add",
+      "summary": "id=call_506091cec2ca4a5dbecd8e03",
+      "actor": "tool",
+      "direction": "local",
+      "note": null,
+      "payload": {
+        "tool_use_id": "call_506091cec2ca4a5dbecd8e03",
+        "name": "add",
+        "input": {
+          "a": 12,
+          "b": 30
+        }
+      },
+      "at": "2026-07-27T08:11:08.014Z"
+    },
+    {
+      "id": 7,
+      "phase": "append_tool_result",
+      "title": "组装 tool_result · add",
+      "summary": "将写入下一条 user.content[]（Anthropic 格式）",
+      "actor": "harness",
+      "direction": "local",
+      "note": null,
+      "payload": {
+        "toolResult": {
+          "type": "tool_result",
+          "tool_use_id": "call_506091cec2ca4a5dbecd8e03",
+          "content": "{\"a\":12,\"b\":30,\"sum\":42}"
+        },
+        "result": {
+          "a": 12,
+          "b": 30,
+          "sum": 42
+        }
+      },
+      "at": "2026-07-27T08:11:08.014Z"
+    },
+    {
+      "id": 8,
+      "phase": "append_tool_result",
+      "title": "回灌 user(tool_result[])",
+      "summary": "Anthropic：工具结果放在 user 消息的 content 数组中",
+      "actor": "harness",
+      "direction": "local",
+      "note": "与 OpenAI 的 role=tool 不同",
+      "payload": {
+        "messagesTail": [
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "thinking",
+                "thinking": "用户想要我：\n1. 查询深圳的天气\n2. 计算 12 + 30\n3. 用中文简短总结\n\n这两个工具调用是独立的，可以同时进行。"
+              },
+              {
+                "type": "text",
+                "text": "好，我同时帮你查天气和做加法。\n\n"
+              },
+              {
+                "type": "tool_use",
+                "id": "call_e01e4372895e4fed9e95a49d",
+                "name": "get_weather",
+                "input": {
+                  "city": "深圳"
+                }
+              },
+              {
+                "type": "tool_use",
+                "id": "call_506091cec2ca4a5dbecd8e03",
+                "name": "add",
+                "input": {
+                  "a": 12,
+                  "b": 30
+                }
+              }
+            ]
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "tool_result",
+                "tool_use_id": "call_e01e4372895e4fed9e95a49d",
+                "content": "{\"city\":\"深圳\",\"temp_c\":33,\"condition\":\"雷阵雨\",\"source\":\"local-mock\"}"
+              },
+              {
+                "type": "tool_result",
+                "tool_use_id": "call_506091cec2ca4a5dbecd8e03",
+                "content": "{\"a\":12,\"b\":30,\"sum\":42}"
+              }
+            ]
+          }
+        ]
+      },
+      "at": "2026-07-27T08:11:08.014Z"
+    },
+    {
+      "id": 9,
+      "phase": "request_model",
+      "title": "ROUND2 · 请求模型",
+      "summary": "POST https://ark.cn-beijing.volces.com/api/coding/v1/messages，system + messages + tools(input_schema)",
+      "actor": "harness",
+      "direction": "out",
+      "note": null,
+      "payload": {
+        "method": "POST",
+        "url": "https://ark.cn-beijing.volces.com/api/coding/v1/messages",
+        "headers": {
+          "x-api-key": "[REDACTED]",
+          "anthropic-version": "2023-06-01",
+          "Content-Type": "application/json",
+          "User-Agent": "claude-cli/2.1.170 (external, sdk-ts, agent-sdk/0.3.170)"
+        },
+        "body": {
+          "model": "ark-code-latest",
+          "max_tokens": "[REDACTED]",
+          "tools": [
+            {
+              "name": "get_weather",
+              "description": "查询指定城市的当前天气（演示用本地假数据）",
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "city": {
+                    "type": "string",
+                    "description": "城市名，如 北京、上海"
+                  }
+                },
+                "required": [
+                  "city"
+                ],
+                "additionalProperties": false
+              }
+            },
+            {
+              "name": "add",
+              "description": "计算两个数字之和",
+              "input_schema": {
+                "type": "object",
+                "properties": {
+                  "a": {
+                    "type": "number"
+                  },
+                  "b": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "a",
+                  "b"
+                ],
+                "additionalProperties": false
+              }
+            }
+          ],
+          "messages": [
+            {
+              "role": "user",
+              "content": "帮我查一下深圳的天气，再用工具算一下 12 加 30，最后用中文简短总结。"
+            },
+            {
+              "role": "assistant",
+              "content": [
+                {
+                  "type": "thinking",
+                  "thinking": "用户想要我：\n1. 查询深圳的天气\n2. 计算 12 + 30\n3. 用中文简短总结\n\n这两个工具调用是独立的，可以同时进行。"
+                },
+                {
+                  "type": "text",
+                  "text": "好，我同时帮你查天气和做加法。\n\n"
+                },
+                {
+                  "type": "tool_use",
+                  "id": "call_e01e4372895e4fed9e95a49d",
+                  "name": "get_weather",
+                  "input": {
+                    "city": "深圳"
+                  }
+                },
+                {
+                  "type": "tool_use",
+                  "id": "call_506091cec2ca4a5dbecd8e03",
+                  "name": "add",
+                  "input": {
+                    "a": 12,
+                    "b": 30
+                  }
+                }
+              ]
+            },
+            {
+              "role": "user",
+              "content": [
+                {
+                  "type": "tool_result",
+                  "tool_use_id": "call_e01e4372895e4fed9e95a49d",
+                  "content": "{\"city\":\"深圳\",\"temp_c\":33,\"condition\":\"雷阵雨\",\"source\":\"local-mock\"}"
+                },
+                {
+                  "type": "tool_result",
+                  "tool_use_id": "call_506091cec2ca4a5dbecd8e03",
+                  "content": "{\"a\":12,\"b\":30,\"sum\":42}"
+                }
+              ]
+            }
+          ],
+          "system": "你是助手。需要天气或加法时必须调用工具，不要编造工具结果。",
+          "tool_choice": {
+            "type": "auto"
+          }
+        }
+      },
+      "at": "2026-07-27T08:11:08.014Z"
+    },
+    {
+      "id": 10,
+      "phase": "model_response",
+      "title": "ROUND2 · 模型响应",
+      "summary": "stop_reason=end_turn，无 tool_use",
+      "actor": "model",
+      "direction": "in",
+      "note": null,
+      "payload": {
+        "httpStatus": 200,
+        "id": "021785139868295a1b170fc911988aa69fdfa08a353ab27dd56c9",
+        "stop_reason": "end_turn",
+        "usage": {
+          "input_tokens": "[REDACTED]",
+          "output_tokens": "[REDACTED]",
+          "cache_read_input_tokens": "[REDACTED]"
+        },
+        "content": [
+          {
+            "type": "thinking",
+            "thinking": "两个结果都拿到了：\n\n1. 深圳天气：33°C，雷阵雨\n2. 12 + 30 = 42\n\n现在用中文简短总结。"
+          },
+          {
+            "type": "text",
+            "text": "**总结：**\n\n1. 🌩️ **深圳天气**：当前气温 **33°C**，有**雷阵雨**，出门记得带伞！\n2. ➕ **算术结果**：**12 + 30 = 42**。\n\n简单说就是：深圳今天雷阵雨、33度，12加30等于42。"
+          }
+        ]
+      },
+      "at": "2026-07-27T08:11:51.311Z"
+    },
+    {
+      "id": 11,
+      "phase": "final_answer",
+      "title": "最终回答",
+      "summary": "基于 tool_result 生成自然语言回复",
+      "actor": "model",
+      "direction": "in",
+      "note": null,
+      "payload": {
+        "content": "**总结：**\n\n1. 🌩️ **深圳天气**：当前气温 **33°C**，有**雷阵雨**，出门记得带伞！\n2. ➕ **算术结果**：**12 + 30 = 42**。\n\n简单说就是：深圳今天雷阵雨、33度，12加30等于42。",
+        "stop_reason": "end_turn",
+        "has_more_tool_use": false
+      },
+      "at": "2026-07-27T08:11:51.311Z"
+    }
+  ],
+  "legend": {
+    "actors": {
+      "harness": "应用侧 / 运行时（组请求、执行工具、回灌）",
+      "model": "大模型（推理 / 产出 tool_calls 或最终文本）",
+      "tool": "本地工具实现（mock）"
+    },
+    "directions": {
+      "out": "发出（Harness → Model / Tool）",
+      "in": "收回（Model / Tool → Harness）",
+      "local": "本地处理"
+    }
+  }
+}

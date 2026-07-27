@@ -29,6 +29,8 @@ const tools = [
         city: { type: "string", description: "城市名，如 北京、上海" },
       },
       required: ["city"],
+      // JSON Schema：禁止声明之外的额外字段（Anthropic 侧对应 OpenAI 的 parameters）
+      additionalProperties: false,
     },
   },
   {
@@ -41,6 +43,7 @@ const tools = [
         b: { type: "number" },
       },
       required: ["a", "b"],
+      additionalProperties: false,
     },
   },
 ];
@@ -63,6 +66,10 @@ async function messagesCreate(messages, roundLabel) {
     tools,
     messages,
     system: SYSTEM,
+    // Anthropic 对应 OpenAI 的 tool_choice：
+    // auto=模型自决；any=必须用工具；tool=强制某个工具；none=禁止
+    // 省略时默认 auto
+    tool_choice: { type: "auto" },
   };
 
   trace.addStep({
@@ -124,7 +131,7 @@ async function messagesCreate(messages, roundLabel) {
       httpStatus: res.status,
       id: data.id,
       stop_reason: data.stop_reason,
-      usage: data.usage ?? null,
+      usage: data.usage ?? null, // token 用量，非敏感，回放页会完整展示
       content: data.content,
     },
     note: toolUses.length
