@@ -1,0 +1,12 @@
+{
+  "name": "function-call-demo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Minimal Function Calling demos for OpenAI-compatible and Anthropic Messages APIs",
+  "scripts": {
+    "openai": "node openai-demo.mjs",
+    "anthropic": "node anthropic-demo.mjs",
+    "viewer": "node serve-viewer.mjs"
+  }
+}

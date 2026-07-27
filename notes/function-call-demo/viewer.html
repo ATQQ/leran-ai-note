@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Function Call · 步骤回放</title>
+<style>
+:root {
+  --bg: #08080c;
+  --surface: rgba(255,255,255,0.04);
+  --border: rgba(255,255,255,0.08);
+  --text: #ededef;
+  --muted: rgba(255,255,255,0.55);
+  --dim: rgba(255,255,255,0.32);
+  --accent: #06b6d4;
+  --accent2: #34d399;
+  --amber: #fbbf24;
+  --rose: #fb7185;
+  --violet: #a78bfa;
+  --font: -apple-system, system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --radius: 14px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  background-image:
+    radial-gradient(ellipse 70% 45% at 10% -5%, rgba(6,182,212,0.14), transparent),
+    radial-gradient(ellipse 50% 35% at 95% 5%, rgba(52,211,153,0.08), transparent);
+}
+.wrap { max-width: 1100px; margin: 0 auto; padding: 28px 20px 80px; }
+
+header { margin-bottom: 22px; }
+h1 {
+  font-size: 1.45rem;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.sub { margin-top: 8px; color: var(--muted); font-size: 0.88rem; line-height: 1.5; }
+
+.toolbar {
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+  margin: 18px 0 20px; padding: 12px 14px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.toolbar label { font-size: 0.78rem; color: var(--muted); }
+.toolbar input[type=file] { font-size: 0.78rem; color: var(--muted); max-width: 220px; }
+.btn {
+  appearance: none; border: 1px solid var(--border); background: rgba(255,255,255,0.05);
+  color: var(--text); border-radius: 10px; padding: 8px 14px; font-size: 0.82rem;
+  cursor: pointer; transition: background .2s, border-color .2s, transform .15s;
+}
+.btn:hover { background: rgba(255,255,255,0.09); border-color: rgba(6,182,212,0.4); }
+.btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.btn.primary {
+  background: rgba(6,182,212,0.18); border-color: rgba(6,182,212,0.45); color: #7dd3fc;
+}
+.btn.primary.active { background: rgba(52,211,153,0.2); border-color: rgba(52,211,153,0.5); color: var(--accent2); }
+.meta-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.chip {
+  font-size: 0.68rem; padding: 3px 9px; border-radius: 999px;
+  border: 1px solid var(--border); color: var(--muted); font-family: var(--mono);
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 860px) {
+  .layout { grid-template-columns: 1fr; }
+}
+
+.rail {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px; max-height: 70vh; overflow: auto;
+}
+.rail h2 { font-size: 0.72rem; color: var(--accent); letter-spacing: .06em; text-transform: uppercase; margin-bottom: 10px; }
+.rail-item {
+  display: block; width: 100%; text-align: left;
+  border: 1px solid transparent; background: transparent; color: var(--muted);
+  padding: 8px 10px; border-radius: 10px; cursor: pointer; margin-bottom: 4px;
+  font-size: 0.78rem; line-height: 1.35; transition: .2s;
+}
+.rail-item:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+.rail-item.active {
+  border-color: rgba(6,182,212,0.4); background: rgba(6,182,212,0.1); color: var(--text);
+}
+.rail-item .id { font-family: var(--mono); color: var(--dim); margin-right: 6px; }
+.rail-item.done .id { color: var(--accent2); }
+
+.stage {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 18px; min-height: 480px;
+  position: relative; overflow: hidden;
+}
+.stage.empty {
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted); font-size: 0.9rem; text-align: center; padding: 40px;
+}
+
+.flow {
+  display: flex; justify-content: center; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 18px; padding-bottom: 16px; border-bottom: 1px solid var(--border);
+}
+.node {
+  min-width: 100px; padding: 12px 14px; border-radius: 12px;
+  border: 1px solid var(--border); background: rgba(0,0,0,0.25);
+  text-align: center; font-size: 0.78rem; color: var(--muted);
+  transition: transform .35s cubic-bezier(.4,0,.2,1), border-color .35s, box-shadow .35s, color .35s;
+}
+.node strong { display: block; font-size: 0.85rem; color: var(--text); margin-bottom: 4px; }
+.node.lit {
+  transform: translateY(-4px) scale(1.04);
+  color: var(--text);
+  border-color: var(--glow, var(--accent));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--glow, var(--accent)) 35%, transparent),
+              0 12px 32px rgba(0,0,0,0.35);
+}
+.node.harness { --glow: var(--accent); }
+.node.model { --glow: var(--violet); }
+.node.tool { --glow: var(--amber); }
+.arrow {
+  align-self: center; color: var(--dim); font-family: var(--mono); font-size: 0.9rem;
+  opacity: 0.4; transition: opacity .3s, color .3s;
+}
+.arrow.lit { opacity: 1; color: var(--accent2); }
+
+.step-head { margin-bottom: 12px; }
+.step-head .phase {
+  display: inline-block; font-family: var(--mono); font-size: 0.68rem;
+  padding: 2px 8px; border-radius: 999px; margin-bottom: 8px;
+  background: rgba(6,182,212,0.12); color: var(--accent);
+}
+.step-head h3 { font-size: 1.1rem; margin-bottom: 6px; }
+.step-head p { color: var(--muted); font-size: 0.86rem; line-height: 1.5; }
+.note {
+  margin-top: 8px; padding: 8px 10px; border-left: 3px solid var(--amber);
+  background: rgba(251,191,36,0.08); color: var(--muted); font-size: 0.8rem; border-radius: 0 8px 8px 0;
+}
+
+.panels { display: grid; grid-template-columns: 1fr; gap: 12px; }
+@media (min-width: 900px) {
+  .panels.two { grid-template-columns: 1fr 1fr; }
+}
+.panel {
+  border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+  background: rgba(0,0,0,0.28);
+  animation: rise .4s cubic-bezier(.4,0,.2,1);
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.panel-h {
+  padding: 8px 12px; font-size: 0.72rem; color: var(--muted);
+  border-bottom: 1px solid var(--border); display: flex; justify-content: space-between;
+}
+.panel-h span.tag { font-family: var(--mono); color: var(--accent2); }
+pre {
+  margin: 0; padding: 12px; max-height: 340px; overflow: auto;
+  font-family: var(--mono); font-size: 0.72rem; line-height: 1.55; color: #cbd5e1;
+  white-space: pre-wrap; word-break: break-word;
+}
+
+.controls {
+  position: sticky; bottom: 12px; margin-top: 16px;
+  display: flex; gap: 10px; align-items: center; justify-content: center;
+  padding: 12px; border-radius: 999px;
+  background: rgba(8,8,12,0.88); backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+}
+.progress {
+  flex: 1; max-width: 220px; height: 6px; border-radius: 3px;
+  background: rgba(255,255,255,0.08); overflow: hidden;
+}
+.progress > i {
+  display: block; height: 100%; width: 0%;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  transition: width .35s cubic-bezier(.4,0,.2,1);
+}
+.kbd { font-family: var(--mono); font-size: 0.65rem; color: var(--dim); margin-left: 8px; }
+
+.hint {
+  margin-top: 14px; font-size: 0.78rem; color: var(--dim); line-height: 1.5; text-align: center;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Function Calling · 步骤回放</h1>
+    <p class="sub">加载 demo 产出的轨迹 JSON，逐步查看每一步请求 / 响应 / 工具执行数据。可用方向键 ← → 前进后退。</p>
+  </header>
+
+  <div class="toolbar">
+    <label>加载轨迹</label>
+    <input id="file" type="file" accept="application/json,.json">
+    <button class="btn" type="button" id="btn-sample">加载示例</button>
+    <button class="btn" type="button" id="btn-openai">尝试 openai-latest</button>
+    <button class="btn" type="button" id="btn-anthropic">尝试 anthropic-latest</button>
+    <div class="meta-chips" id="meta"></div>
+  </div>
+
+  <div class="layout">
+    <aside class="rail">
+      <h2>Steps</h2>
+      <div id="rail"></div>
+    </aside>
+    <section class="stage empty" id="stage">
+      请先运行 <code>node openai-demo.mjs</code> 或 <code>node anthropic-demo.mjs</code>，<br>
+      再选择 <code>traces/*-latest.json</code>；亦可先点「加载示例」。
+    </section>
+  </div>
+
+  <div class="controls" id="controls" hidden>
+    <button class="btn" type="button" id="prev">← 上一步</button>
+    <div class="progress"><i id="bar"></i></div>
+    <button class="btn primary" type="button" id="play">播放</button>
+    <button class="btn" type="button" id="next">下一步 →</button>
+    <span class="kbd">← → · Space</span>
+  </div>
+  <p class="hint">若直接用浏览器打开本页导致无法 fetch 本地 traces，请用文件选择器加载 JSON，或执行 <code>npm run viewer</code> 后访问。</p>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let trace = null;
+let index = 0;
+let playing = false;
+let timer = null;
+
+const PHASE_ACTOR = {
+  init: "harness",
+  request_model: "harness",
+  model_response: "model",
+  execute_tool: "tool",
+  append_tool_result: "harness",
+  final_answer: "model",
+  error: "harness",
+};
+
+function actorClass(step) {
+  return step.actor || PHASE_ACTOR[step.phase] || "harness";
+}
+
+async function loadUrl(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`无法加载 ${url}（${res.status}）`);
+  return res.json();
+}
+
+function setTrace(data) {
+  if (!data?.steps?.length) throw new Error("JSON 中没有 steps");
+  trace = data;
+  index = 0;
+  playing = false;
+  stopPlay();
+  $("controls").hidden = false;
+  $("play").textContent = "播放";
+  $("play").classList.remove("active");
+  renderMeta();
+  renderRail();
+  renderStep(true);
+}
+
+function renderMeta() {
+  const m = trace.meta || {};
+  $("meta").innerHTML = [
+    m.provider && `<span class="chip">${esc(m.provider)}</span>`,
+    m.model && `<span class="chip">${esc(m.model)}</span>`,
+    `<span class="chip">${trace.steps.length} steps</span>`,
+  ].filter(Boolean).join("");
+}
+
+function renderRail() {
+  $("rail").innerHTML = trace.steps.map((s, i) => `
+    <button type="button" class="rail-item ${i === index ? "active" : ""} ${i < index ? "done" : ""}" data-i="${i}">
+      <span class="id">${String(s.id).padStart(2, "0")}</span>${esc(s.title)}
+    </button>
+  `).join("");
+  $("rail").querySelectorAll(".rail-item").forEach((el) => {
+    el.addEventListener("click", () => {
+      stopPlay();
+      index = Number(el.dataset.i);
+      renderRail();
+      renderStep(true);
+    });
+  });
+}
+
+function litNodes(step) {
+  const a = actorClass(step);
+  return {
+    harness: a === "harness" || step.direction === "out" || step.phase === "append_tool_result",
+    model: a === "model" || step.phase === "request_model" || step.phase === "model_response",
+    tool: a === "tool" || step.phase === "execute_tool",
+    arrowOut: step.direction === "out" || step.phase === "request_model",
+    arrowIn: step.direction === "in" || step.phase === "model_response" || step.phase === "final_answer",
+    arrowTool: step.phase === "execute_tool" || step.phase === "append_tool_result",
+  };
+}
+
+function renderStep(animate) {
+  const step = trace.steps[index];
+  const lit = litNodes(step);
+  const pct = ((index + 1) / trace.steps.length) * 100;
+  $("bar").style.width = pct + "%";
+  $("prev").disabled = index <= 0;
+  $("next").disabled = index >= trace.steps.length - 1;
+
+  const payload = step.payload ?? null;
+  const dual = payload && typeof payload === "object" && (payload.body || payload.message || payload.appended);
+
+  $("stage").className = "stage";
+  $("stage").innerHTML = `
+    <div class="flow">
+      <div class="node harness ${lit.harness ? "lit" : ""}"><strong>Harness</strong>组请求 / 回灌</div>
+      <div class="arrow ${lit.arrowOut || lit.arrowIn ? "lit" : ""}">${lit.arrowIn && !lit.arrowOut ? "←" : "→"}</div>
+      <div class="node model ${lit.model ? "lit" : ""}"><strong>Model</strong>推理 / tool_calls</div>
+      <div class="arrow ${lit.arrowTool ? "lit" : ""}">↔</div>
+      <div class="node tool ${lit.tool ? "lit" : ""}"><strong>Tool</strong>本地执行</div>
+    </div>
+    <div class="step-head ${animate ? "" : ""}">
+      <div class="phase">${esc(step.phase)}</div>
+      <h3>${esc(step.title)}</h3>
+      <p>${esc(step.summary || "")}</p>
+      ${step.note ? `<div class="note">${esc(step.note)}</div>` : ""}
+    </div>
+    <div class="panels ${dual ? "two" : ""}">
+      ${renderPanels(step)}
+    </div>
+  `;
+  renderRail();
+}
+
+function renderPanels(step) {
+  const p = step.payload;
+  if (p == null) return `<div class="panel"><div class="panel-h">payload</div><pre>(empty)</pre></div>`;
+
+  if (step.phase === "request_model" && p.body) {
+    return `
+      <div class="panel"><div class="panel-h">Request headers <span class="tag">out</span></div>
+        <pre>${esc(JSON.stringify({ url: p.url, method: p.method, headers: p.headers }, null, 2))}</pre></div>
+      <div class="panel"><div class="panel-h">Request body <span class="tag">out</span></div>
+        <pre>${esc(JSON.stringify(p.body, null, 2))}</pre></div>`;
+  }
+  if (step.phase === "model_response") {
+    return `
+      <div class="panel"><div class="panel-h">Model message <span class="tag">in</span></div>
+        <pre>${esc(JSON.stringify(p.message ?? p.content ?? p, null, 2))}</pre></div>
+      ${p.usage ? `<div class="panel"><div class="panel-h">usage</div><pre>${esc(JSON.stringify(p.usage, null, 2))}</pre></div>` : ""}`;
+  }
+  if (step.phase === "append_tool_result" && p.appended) {
+    return `
+      <div class="panel"><div class="panel-h">Appended message</div>
+        <pre>${esc(JSON.stringify(p.appended, null, 2))}</pre></div>
+      <div class="panel"><div class="panel-h">Tool result</div>
+        <pre>${esc(JSON.stringify(p.result, null, 2))}</pre></div>`;
+  }
+  return `<div class="panel"><div class="panel-h">payload <span class="tag">${esc(step.direction || "")}</span></div>
+    <pre>${esc(JSON.stringify(p, null, 2))}</pre></div>`;
+}
+
+function esc(s) {
+  return String(s ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
+function go(delta) {
+  const next = index + delta;
+  if (next < 0 || next >= trace.steps.length) {
+    stopPlay();
+    return;
+  }
+  index = next;
+  renderStep(true);
+  if (index >= trace.steps.length - 1) stopPlay();
+}
+
+function stopPlay() {
+  playing = false;
+  if (timer) clearInterval(timer);
+  timer = null;
+  $("play").textContent = "播放";
+  $("play").classList.remove("active");
+}
+
+function togglePlay() {
+  if (!trace) return;
+  if (playing) {
+    stopPlay();
+    return;
+  }
+  playing = true;
+  $("play").textContent = "暂停";
+  $("play").classList.add("active");
+  if (index >= trace.steps.length - 1) index = -1;
+  timer = setInterval(() => go(1), 1600);
+  go(1);
+}
+
+$("file").addEventListener("change", async (e) => {
+  const f = e.target.files?.[0];
+  if (!f) return;
+  try {
+    setTrace(JSON.parse(await f.text()));
+  } catch (err) {
+    alert("加载失败：" + err.message);
+  }
+});
+
+$("btn-sample").addEventListener("click", async () => {
+  try {
+    setTrace(await loadUrl("./traces/sample-openai.json"));
+  } catch (err) {
+    alert(err.message + "\n可改用「选择文件」加载 traces/sample-openai.json");
+  }
+});
+
+$("btn-openai").addEventListener("click", async () => {
+  try {
+    setTrace(await loadUrl("./traces/openai-latest.json"));
+  } catch (err) {
+    alert("未找到 openai-latest.json。请先运行 node openai-demo.mjs，或用文件选择器加载。");
+  }
+});
+
+$("btn-anthropic").addEventListener("click", async () => {
+  try {
+    setTrace(await loadUrl("./traces/anthropic-latest.json"));
+  } catch (err) {
+    alert("未找到 anthropic-latest.json。请先运行 node anthropic-demo.mjs，或用文件选择器加载。");
+  }
+});
+
+$("prev").addEventListener("click", () => { stopPlay(); go(-1); });
+$("next").addEventListener("click", () => { stopPlay(); go(1); });
+$("play").addEventListener("click", togglePlay);
+
+window.addEventListener("keydown", (e) => {
+  if (!trace) return;
+  if (e.key === "ArrowLeft") { e.preventDefault(); stopPlay(); go(-1); }
+  if (e.key === "ArrowRight") { e.preventDefault(); stopPlay(); go(1); }
+  if (e.key === " ") { e.preventDefault(); togglePlay(); }
+});
+</script>
+</body>
+</html>

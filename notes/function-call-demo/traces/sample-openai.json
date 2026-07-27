@@ -1,0 +1,242 @@
+{
+  "version": 1,
+  "meta": {
+    "provider": "openai",
+    "model": "gpt-4o-mini",
+    "baseUrl": "https://example.com/v1",
+    "userAgent": "codex_sdk_ts/0.144.5 (Mac OS 14.5.0; arm64) vscode/3.13.10 (codex_exec; 0.144.5)",
+    "startedAt": "2026-07-27T07:00:00.000Z",
+    "finishedAt": "2026-07-27T07:00:02.000Z",
+    "finalAnswer": "深圳现在雷阵雨，约 33°C；12+30=42。"
+  },
+  "toolsSchema": [
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "查询指定城市的当前天气（演示用本地假数据）",
+        "parameters": {
+          "type": "object",
+          "properties": { "city": { "type": "string" } },
+          "required": ["city"]
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "add",
+        "description": "计算两个数字之和",
+        "parameters": {
+          "type": "object",
+          "properties": { "a": { "type": "number" }, "b": { "type": "number" } },
+          "required": ["a", "b"]
+        }
+      }
+    }
+  ],
+  "legend": {
+    "actors": {
+      "harness": "应用侧 / 运行时（组请求、执行工具、回灌）",
+      "model": "大模型（推理 / 产出 tool_calls 或最终文本）",
+      "tool": "本地工具实现（mock）"
+    },
+    "directions": {
+      "out": "发出（Harness → Model / Tool）",
+      "in": "收回（Model / Tool → Harness）",
+      "local": "本地处理"
+    }
+  },
+  "steps": [
+    {
+      "id": 1,
+      "phase": "init",
+      "title": "初始化 Context",
+      "summary": "组装 system + user，并准备 tools schema",
+      "actor": "harness",
+      "direction": "local",
+      "note": null,
+      "payload": {
+        "messages": [
+          { "role": "system", "content": "你是助手。需要天气或加法时必须调用工具，不要编造工具结果。" },
+          { "role": "user", "content": "帮我查一下深圳的天气，再用工具算一下 12 加 30，最后用中文简短总结。" }
+        ]
+      },
+      "at": "2026-07-27T07:00:00.100Z"
+    },
+    {
+      "id": 2,
+      "phase": "request_model",
+      "title": "ROUND1 · 请求模型",
+      "summary": "POST …/chat/completions，携带 messages + tools schema",
+      "actor": "harness",
+      "direction": "out",
+      "note": null,
+      "payload": {
+        "method": "POST",
+        "url": "https://example.com/v1/chat/completions",
+        "headers": {
+          "Authorization": "Bearer [REDACTED]",
+          "Content-Type": "application/json",
+          "User-Agent": "codex_sdk_ts/0.144.5 (Mac OS 14.5.0; arm64) vscode/3.13.10 (codex_exec; 0.144.5)"
+        },
+        "body": {
+          "model": "gpt-4o-mini",
+          "tool_choice": "auto",
+          "messages": [
+            { "role": "system", "content": "你是助手。需要天气或加法时必须调用工具，不要编造工具结果。" },
+            { "role": "user", "content": "帮我查一下深圳的天气，再用工具算一下 12 加 30，最后用中文简短总结。" }
+          ]
+        }
+      },
+      "at": "2026-07-27T07:00:00.200Z"
+    },
+    {
+      "id": 3,
+      "phase": "model_response",
+      "title": "ROUND1 · 模型响应",
+      "summary": "返回 2 个 tool_calls",
+      "actor": "model",
+      "direction": "in",
+      "note": "执行依据是结构化 tool_calls，不是思考文本",
+      "payload": {
+        "message": {
+          "role": "assistant",
+          "content": null,
+          "tool_calls": [
+            {
+              "id": "call_weather",
+              "type": "function",
+              "function": { "name": "get_weather", "arguments": "{\"city\":\"深圳\"}" }
+            },
+            {
+              "id": "call_add",
+              "type": "function",
+              "function": { "name": "add", "arguments": "{\"a\":12,\"b\":30}" }
+            }
+          ]
+        }
+      },
+      "at": "2026-07-27T07:00:00.800Z"
+    },
+    {
+      "id": 4,
+      "phase": "execute_tool",
+      "title": "执行工具 · get_weather",
+      "summary": "id=call_weather",
+      "actor": "tool",
+      "direction": "local",
+      "payload": {
+        "tool_call_id": "call_weather",
+        "name": "get_weather",
+        "arguments": { "city": "深圳" }
+      },
+      "at": "2026-07-27T07:00:00.900Z"
+    },
+    {
+      "id": 5,
+      "phase": "append_tool_result",
+      "title": "回灌 tool 消息 · get_weather",
+      "summary": "role=tool，绑定 tool_call_id，写入 messages",
+      "actor": "harness",
+      "direction": "local",
+      "payload": {
+        "appended": {
+          "role": "tool",
+          "tool_call_id": "call_weather",
+          "content": "{\"city\":\"深圳\",\"temp_c\":33,\"condition\":\"雷阵雨\",\"source\":\"local-mock\"}"
+        },
+        "result": { "city": "深圳", "temp_c": 33, "condition": "雷阵雨", "source": "local-mock" }
+      },
+      "at": "2026-07-27T07:00:00.950Z"
+    },
+    {
+      "id": 6,
+      "phase": "execute_tool",
+      "title": "执行工具 · add",
+      "summary": "id=call_add",
+      "actor": "tool",
+      "direction": "local",
+      "payload": {
+        "tool_call_id": "call_add",
+        "name": "add",
+        "arguments": { "a": 12, "b": 30 }
+      },
+      "at": "2026-07-27T07:00:01.000Z"
+    },
+    {
+      "id": 7,
+      "phase": "append_tool_result",
+      "title": "回灌 tool 消息 · add",
+      "summary": "role=tool，绑定 tool_call_id，写入 messages",
+      "actor": "harness",
+      "direction": "local",
+      "payload": {
+        "appended": {
+          "role": "tool",
+          "tool_call_id": "call_add",
+          "content": "{\"a\":12,\"b\":30,\"sum\":42}"
+        },
+        "result": { "a": 12, "b": 30, "sum": 42 }
+      },
+      "at": "2026-07-27T07:00:01.050Z"
+    },
+    {
+      "id": 8,
+      "phase": "request_model",
+      "title": "ROUND2 · 请求模型",
+      "summary": "携带 assistant(tool_calls) + tool 结果再次请求",
+      "actor": "harness",
+      "direction": "out",
+      "payload": {
+        "method": "POST",
+        "url": "https://example.com/v1/chat/completions",
+        "body": {
+          "model": "gpt-4o-mini",
+          "messages": [
+            { "role": "system", "content": "…" },
+            { "role": "user", "content": "…" },
+            {
+              "role": "assistant",
+              "content": null,
+              "tool_calls": [
+                { "id": "call_weather", "function": { "name": "get_weather", "arguments": "{\"city\":\"深圳\"}" } },
+                { "id": "call_add", "function": { "name": "add", "arguments": "{\"a\":12,\"b\":30}" } }
+              ]
+            },
+            { "role": "tool", "tool_call_id": "call_weather", "content": "{\"city\":\"深圳\",\"temp_c\":33,\"condition\":\"雷阵雨\"}" },
+            { "role": "tool", "tool_call_id": "call_add", "content": "{\"a\":12,\"b\":30,\"sum\":42}" }
+          ]
+        }
+      },
+      "at": "2026-07-27T07:00:01.100Z"
+    },
+    {
+      "id": 9,
+      "phase": "model_response",
+      "title": "ROUND2 · 模型响应",
+      "summary": "返回最终文本（无 tool_calls）",
+      "actor": "model",
+      "direction": "in",
+      "payload": {
+        "message": {
+          "role": "assistant",
+          "content": "深圳现在雷阵雨，约 33°C；12+30=42。"
+        }
+      },
+      "at": "2026-07-27T07:00:01.800Z"
+    },
+    {
+      "id": 10,
+      "phase": "final_answer",
+      "title": "最终回答",
+      "summary": "基于工具结果生成自然语言回复",
+      "actor": "model",
+      "direction": "in",
+      "payload": {
+        "content": "深圳现在雷阵雨，约 33°C；12+30=42。"
+      },
+      "at": "2026-07-27T07:00:01.900Z"
+    }
+  ]
+}

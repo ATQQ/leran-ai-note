@@ -10,6 +10,7 @@
 |------|------|
 | [ai-app-interview/](./ai-app-interview/) | Context / Harness / SKILL / MCP / Agent 全章结论 + 复习页 |
 | [../mcp-demo/](../mcp-demo/) | 最小 stdio MCP Server 实操 |
+| [../function-call-demo/](../function-call-demo/) | OpenAI / Anthropic Function Calling 双格式演示 |
 | [../agent/](../agent/) | Prompt / Tool Use 早期笔记 |
 | [../sigma-lerna-skill-mcp/](../sigma-lerna-skill-mcp/) | SKILL + MCP 原理笔记（另一轮学习） |
 | [../sse/](../sse/) | SSE 相关笔记 |
