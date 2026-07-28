@@ -1,0 +1,11 @@
+{
+  "name": "my-harness",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Minimal Agent Harness: unified kernel + OpenAI adapter + HTML/SSE demo",
+  "scripts": {
+    "demo": "node --experimental-strip-types server/index.ts",
+    "start": "npm run demo"
+  }
+}

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>M1 · OpenAI 流式循环</title>
+    <link rel="stylesheet" href="../shared/shared.css" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main>
+      <p><a href="../index/index.html">← 索引</a></p>
+      <h1>M1 · 统一内核 + OpenAI（默认流式）</h1>
+      <p class="sub">
+        固定演示：查天气 + 加法 → 最终中文总结。页面只展示 SSE 增量与 Trace；密钥在 Server。
+      </p>
+
+      <div class="card">
+        <label for="prompt">用户请求</label>
+        <textarea id="prompt">
+帮我查一下深圳的天气，再用工具算一下 12 加 30，最后用中文简短总结。</textarea>
+        <div class="row">
+          <button id="run">运行</button>
+          <button id="stop" class="secondary" disabled>取消</button>
+          <button id="reloadTrace" class="secondary">加载最新 Trace</button>
+          <span id="status" class="pill">idle</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row panel-head">
+          <strong>流式文本</strong>
+        </div>
+        <div id="stream" class="stream"></div>
+      </div>
+
+      <div class="card">
+        <strong>事件流</strong>
+        <div id="events" class="events"></div>
+      </div>
+
+      <div class="card">
+        <div class="row panel-head">
+          <strong>Trace 回放</strong>
+          <button id="prev" class="secondary">上一步</button>
+          <button id="next" class="secondary">下一步</button>
+          <span id="stepLabel" class="pill">0 / 0</span>
+        </div>
+        <div id="trace" class="trace">尚未加载</div>
+      </div>
+    </main>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

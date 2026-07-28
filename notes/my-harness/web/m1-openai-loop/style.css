@@ -1,0 +1,6 @@
+/* M1 页局部样式（公共样式见 ../shared/shared.css） */
+
+.panel-head {
+  margin-top: 0;
+  margin-bottom: 8px;
+}

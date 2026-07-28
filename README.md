@@ -25,8 +25,11 @@
    npm run viewer         # http://127.0.0.1:8765/viewer.html
    ```
 
+### 自建 Harness
+8. [my-harness · 学习与实施路线](./notes/my-harness/ROADMAP.md) — 对照 [Pi](https://github.com/earendil-works/pi)；HTML + Node Server 演示；默认流式；统一数据结构；分阶段页面
+
 ## 学习过程用到的工具
->很杂，组合着用
+> 学习过程中使用过的工具（组合使用）
 
 * ~~[WorkBuddy](https://www.codebuddy.cn/work/)~~
 * [Trae SOLO](https://solo.trae.ai/)
@@ -50,6 +53,8 @@
 * https://github.com/robinebers/openusage
 
 ## 计划
+
+* [自建 Harness 学习与实施路线](./notes/my-harness/ROADMAP.md)（参考 [Pi](https://github.com/earendil-works/pi)；HTML + Node Server）
 
 ## 算法（DDDD）
 * https://leetcode.cn/studyplan/top-interview-150/
