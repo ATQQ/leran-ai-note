@@ -7,6 +7,7 @@
 | 语言 | TypeScript（Node） |
 | 入口 | `web/<stage>/` HTML + `server/`（非 CLI）；默认 SSE 流式 |
 | 前端 | **每阶段独立目录**；HTML / CSS / JS 分文件；公共能力在 `web/shared/` |
+| 注释 | **中文详尽注释**（模块职责、关键步骤、协议边界）；见 ROADMAP §8.7 |
 | 密钥 | 仅 Server 读 `.env`；前端与 Trace 脱敏 |
 | 对照 | Pi 只读；不复制大段源码、不作运行时依赖 |
 

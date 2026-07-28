@@ -63,6 +63,11 @@ notes/my-harness/
 - HTML / CSS / JS 分文件；HTML 不写大段内联脚本或样式。
 - 公共能力放 `web/shared/`，页面用相对路径引用。
 
+### 注释约定（强制）
+
+- 使用**简体中文**详尽注释：文件头职责、公开 API、关键分支与协议边界。
+- 细则见 ROADMAP §8.7。
+
 ## 类型边界（冻结）
 
 - 内核只使用 `UnifiedMessage` / `ToolDef` / `ToolCall` / `ToolResult` / `RunEvent`。

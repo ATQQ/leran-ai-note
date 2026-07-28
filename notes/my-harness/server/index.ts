@@ -1,3 +1,14 @@
+/**
+ * my-harness HTTP 演示 Server
+ *
+ * 职责：
+ * 1. 托管 web/ 静态资源（每阶段独立目录）
+ * 2. POST /api/run：调用 kernel，以 SSE 推送 RunEvent
+ * 3. 读取 .env 中的模型密钥（绝不下发到浏览器）
+ * 4. 将脱敏后的 Trace 写入 traces/
+ *
+ * 启动：npm run demo → http://127.0.0.1:8787/web/index/index.html
+ */
 import http from "node:http";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
@@ -35,6 +46,7 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
   res.end(JSON.stringify(body));
 }
 
+/** 写一条 SSE 帧：event 名 + JSON data（注意末尾空行） */
 function writeSse(res: http.ServerResponse, event: string, data: unknown): void {
   res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
 }
@@ -47,6 +59,12 @@ async function readBody(req: http.IncomingMessage): Promise<string> {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+/**
+ * 静态文件服务。
+ * - `/` → 索引页
+ * - 若 URL 指向目录，回落到该目录下的 index.html（避免 EISDIR 崩溃）
+ * - 禁止 `..` 越出包根
+ */
 function serveStatic(urlPath: string, res: http.ServerResponse): boolean {
   let rel = urlPath === "/" ? "/web/index/index.html" : urlPath;
   if (rel.includes("..")) {
@@ -69,6 +87,7 @@ function serveStatic(urlPath: string, res: http.ServerResponse): boolean {
   return true;
 }
 
+// 外层包一层 catch：单次请求异常不应打崩整个进程
 const server = http.createServer((req, res) => {
   void handleRequest(req, res).catch((err) => {
     console.error(err);
@@ -84,6 +103,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   const url = new URL(req.url || "/", `http://127.0.0.1:${PORT}`);
   const pathname = url.pathname;
 
+  // CORS 预检（本地打开 file:// 或跨端口时可能用到）
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
@@ -94,6 +114,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return;
   }
 
+  // 健康检查：不回传 Key，只说明是否已配置
   if (req.method === "GET" && pathname === "/api/health") {
     sendJson(res, 200, {
       ok: true,
@@ -104,6 +125,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return;
   }
 
+  // 供页面 Trace 回放区加载最近一次运行结果
   if (req.method === "GET" && pathname === "/api/trace/latest") {
     const p = join(ROOT, "traces", "openai-latest.json");
     if (!existsSync(p)) {
@@ -115,6 +137,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return;
   }
 
+  // 主入口：流式跑一轮 Agent
   if (req.method === "POST" && pathname === "/api/run") {
     if (!KEY || KEY.includes("xxx")) {
       sendJson(res, 500, {
@@ -123,6 +146,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       return;
     }
 
+    // 默认固定演示 prompt（与 PLAN 回归用例一致）
     let prompt =
       "帮我查一下深圳的天气，再用工具算一下 12 加 30，最后用中文简短总结。";
     let maxSteps = 8;
@@ -142,6 +166,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       return;
     }
 
+    // 先写 SSE 头，再边跑边推事件
     res.writeHead(200, {
       "Content-Type": "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache",
@@ -149,6 +174,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       "Access-Control-Allow-Origin": "*",
     });
 
+    // 浏览器断开连接 → abort → loop / fetch 停止
     const ac = new AbortController();
     req.on("close", () => ac.abort());
 
@@ -165,6 +191,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     });
 
     const onEvent = (event: RunEvent) => {
+      // text_delta 只推前端，不写入 Trace 步骤列表
       if (event.type !== "text_delta") {
         trace.addFromEvent(event);
       }
@@ -188,6 +215,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         stopReason: result.stopReason,
       });
       const path = trace.write(join(ROOT, "traces"), "openai");
+      // done：前端据此结束 UI 状态并加载 Trace
       writeSse(res, "done", {
         finalText: result.finalText,
         stopReason: result.stopReason,
@@ -211,7 +239,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         try {
           trace.write(join(ROOT, "traces"), "openai");
         } catch {
-          /* ignore */
+          /* 写盘失败不影响响应结束 */
         }
         writeSse(res, "done", { error: message, stopReason: "error" });
       } else {

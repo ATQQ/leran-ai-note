@@ -1,16 +1,30 @@
+/**
+ * Agent 循环（Harness 内核）
+ *
+ * 职责：请求模型 → 解析工具调用 → 执行 → 回写 Context → 再请求，直到：
+ * - 模型不再返回工具调用（正常完成）
+ * - 达到 maxSteps / 被 AbortSignal 取消（强制终止）
+ *
+ * 边界：
+ * - 本文件只使用 Unified* 类型与 camelCase 字段（toolCalls / toolCallId）
+ * - 禁止写入 OpenAI 线格式字段名（如 tool_calls）；协议转换留给 Adapter
+ * - 对应 Pi：agent-core 的循环 + 事件；对应学习笔记：Harness 强制项（步数/取消）
+ */
 import type { RunEvent, RunOptions, UnifiedMessage } from "../types.ts";
 
+/** 给事件补上 ISO 时间戳后交给订阅方（SSE / Trace） */
 function emit(onEvent: RunOptions["onEvent"], event: Omit<RunEvent, "at">): void {
   onEvent?.({ ...event, at: new Date().toISOString() });
 }
 
+/** M3 之前的默认 Context 策略：原样发送全部历史 */
 function identity(messages: UnifiedMessage[]): UnifiedMessage[] {
   return messages;
 }
 
 /**
- * Provider 无关的 Agent 循环。
- * 禁止在此文件使用厂商协议字段名（如 tool_calls、role:"tool" 字面协议结构）。
+ * 执行一次 Agent Run。
+ * @returns messages 为完整轨迹；finalText 为无工具调用时的最终答复；stopReason 说明为何结束
  */
 export async function runAgent(opts: RunOptions): Promise<{
   messages: UnifiedMessage[];
@@ -19,6 +33,8 @@ export async function runAgent(opts: RunOptions): Promise<{
 }> {
   const maxSteps = opts.maxSteps ?? 8;
   const assemble = opts.assembleContext ?? identity;
+
+  // 初始 Context：system 约束「必须用工具」+ 用户 prompt
   const messages: UnifiedMessage[] = opts.messages
     ? [...opts.messages]
     : [
@@ -43,9 +59,11 @@ export async function runAgent(opts: RunOptions): Promise<{
 
   let steps = 0;
   let finalText: string | null = null;
+  // completed：模型给出最终文本；aborted / max_steps：Harness 强制终止
   let stopReason = "completed";
 
   while (steps < maxSteps) {
+    // 每轮开始前检查取消（前端断开 SSE 会 abort）
     if (opts.signal?.aborted) {
       stopReason = "aborted";
       break;
@@ -53,6 +71,7 @@ export async function runAgent(opts: RunOptions): Promise<{
 
     steps += 1;
     const roundLabel = `ROUND${steps}`;
+    // 发往模型前走钩子：M3 可在此裁剪历史
     const forModel = assemble(messages);
 
     emit(opts.onEvent, {
@@ -69,11 +88,13 @@ export async function runAgent(opts: RunOptions): Promise<{
       },
     });
 
+    // Adapter 内部做协议转换 + 流式解析；此处只拿到统一 assistant 消息
     const assistant = await opts.adapter.stream({
       messages: forModel,
       tools: opts.tools,
       signal: opts.signal,
       onTextDelta: (delta) => {
+        // 增量只推 SSE，不逐条写入 Trace（避免刷屏；完整内容在 assistant_message）
         emit(opts.onEvent, {
           type: "text_delta",
           phase: "stream",
@@ -108,12 +129,14 @@ export async function runAgent(opts: RunOptions): Promise<{
         : null,
     });
 
+    // 无工具调用 → 正常结束（最终答复）
     if (calls.length === 0) {
       finalText = assistant.content;
       stopReason = "completed";
       break;
     }
 
+    // 有工具调用 → Harness 调度执行并回写（执行依据是结构，不是自然语言）
     for (const call of calls) {
       if (opts.signal?.aborted) {
         stopReason = "aborted";
@@ -132,6 +155,7 @@ export async function runAgent(opts: RunOptions): Promise<{
 
       const result = await opts.executeTool(call);
 
+      // 统一消息里用 role:"tool" + toolCallId 绑定；Adapter 出站时再映射成厂商线格式
       const toolMessage: UnifiedMessage = {
         role: "tool",
         content: result.content,
@@ -152,9 +176,10 @@ export async function runAgent(opts: RunOptions): Promise<{
     }
 
     if (stopReason === "aborted") break;
+    // 若仍有步数配额：回到 while 顶部再请求模型（基于工具结果继续推理）
   }
 
-  // 用尽步数仍未得到无工具调用的最终答复
+  // 循环因 maxSteps 退出，且从未拿到「无工具调用」的最终答复
   if (stopReason === "completed" && finalText === null && !opts.signal?.aborted) {
     stopReason = "max_steps";
   }

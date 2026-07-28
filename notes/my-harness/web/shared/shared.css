@@ -1,3 +1,10 @@
+/**
+ * 全站公共样式
+ * - CSS 变量定义主题色
+ * - 通用布局：main / card / button / stream / trace 等
+ * 各阶段页的局部样式放在各自目录的 style.css / index.css
+ */
+
 :root {
   --bg: #0f1419;
   --panel: #1a222c;

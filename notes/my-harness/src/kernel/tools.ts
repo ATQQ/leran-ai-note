@@ -1,5 +1,15 @@
-import type { ToolCall, ToolDef, ToolResult } from "./types.ts";
+/**
+ * 本地 mock 工具注册表（M1）
+ *
+ * - MOCK_TOOLS：发给模型的 schema（声明）
+ * - impl：真正执行的函数（实现）；实现代码永不进入模型 Context
+ * - executeMockTool：把 ToolCall 路由到实现，统一返回 ToolResult
+ *
+ * M5 起会增加 MCP 后端；本文件保持「本地假数据」演示用。
+ */
+import type { ToolCall, ToolDef, ToolResult } from "../types.ts";
 
+/** 工具声明：additionalProperties:false 减少模型乱加字段 */
 export const MOCK_TOOLS: ToolDef[] = [
   {
     name: "get_weather",
@@ -28,8 +38,10 @@ export const MOCK_TOOLS: ToolDef[] = [
   },
 ];
 
+/** name → 实现函数；与 schema 一一对应 */
 const impl: Record<string, (args: Record<string, unknown>) => Promise<unknown>> = {
   get_weather: async ({ city }) => {
+    // 假数据表：只为演示「执行 → 回写」，不访问真实天气 API
     const table: Record<string, { temp_c: number; condition: string }> = {
       北京: { temp_c: 28, condition: "晴" },
       上海: { temp_c: 31, condition: "多云" },
@@ -42,6 +54,11 @@ const impl: Record<string, (args: Record<string, unknown>) => Promise<unknown>> 
   add: async ({ a, b }) => ({ a, b, sum: Number(a) + Number(b) }),
 };
 
+/**
+ * 执行一次工具调用。
+ * 未知工具 / 抛错：仍返回 ToolResult（isError=true），由 loop 写回 Context，
+ * 让模型有机会看到错误（M2 会加强 schema 校验与策略）。
+ */
 export async function executeMockTool(call: ToolCall): Promise<ToolResult> {
   const fn = impl[call.name];
   if (!fn) {

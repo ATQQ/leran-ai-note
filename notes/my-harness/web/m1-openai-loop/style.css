@@ -1,6 +1,62 @@
-/* M1 页局部样式（公共样式见 ../shared/shared.css） */
+/**
+ * M1 页局部样式
+ * 公共主题变量与组件样式见 ../shared/shared.css
+ *
+ * 流式区按「轮次」分块：看得见 ROUND1 / 工具 / ROUND2 的时间线
+ */
 
 .panel-head {
   margin-top: 0;
   margin-bottom: 8px;
+}
+
+#stream.stream {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 6em;
+}
+
+.round {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.round-head {
+  padding: 6px 10px;
+  font-size: 0.75rem;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  background: #141b22;
+}
+
+.round-head.is-tools {
+  color: var(--warn);
+}
+
+.round-head.is-final {
+  color: var(--ok);
+}
+
+.round-body {
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  font-family: var(--mono);
+  font-size: 0.88rem;
+  min-height: 1.5em;
+}
+
+.round-body.is-empty {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.round-tools {
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  color: var(--accent);
+  border-left: 2px solid var(--accent);
+  margin-left: 4px;
 }

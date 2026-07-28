@@ -1,7 +1,20 @@
+/**
+ * 调用轨迹（Trace）记录与落盘
+ *
+ * 用途：
+ * - 学习回放：逐步查看「请求模型 → 工具执行 → 回写」
+ * - 审计：脱敏后写入 traces/*-latest.json
+ *
+ * 字段风格对齐 notes/function-call-demo 的 Viewer，便于两边对照。
+ */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { RunEvent } from "./types.ts";
 
+/**
+ * 递归脱敏：密钥类字符串与敏感字段名替换为占位符。
+ * 原则：Trace 可以进版本库样例，但真实 Key 绝不能出现。
+ */
 function redactDeep(value: unknown): unknown {
   if (value == null) return value;
   if (typeof value === "string") {
@@ -30,6 +43,7 @@ function redactDeep(value: unknown): unknown {
   return value;
 }
 
+/** 单步轨迹（落盘 JSON 中的 steps[] 元素） */
 export type TraceStep = {
   id: number;
   phase: string;
@@ -62,11 +76,15 @@ export class TraceRecorder {
       startedAt: new Date().toISOString(),
       finishedAt: null as string | null,
     };
+    // schema 里一般不含密钥，仍统一走脱敏
     this.toolsSchema = redactDeep(opts.toolsSchema);
   }
 
+  /**
+   * 从 RunEvent 记一步。
+   * text_delta 不落盘（流式碎片太多）；完整内容看 assistant_message。
+   */
   addFromEvent(event: RunEvent): TraceStep {
-    // 流式 text_delta 汇总进 assistant，避免 Trace 刷屏
     if (event.type === "text_delta") {
       return {
         id: this.steps.length,
@@ -91,6 +109,7 @@ export class TraceRecorder {
     });
   }
 
+  /** 手动追加一步（也可不经过 RunEvent） */
   addStep(input: {
     phase: string;
     title: string;
@@ -115,6 +134,7 @@ export class TraceRecorder {
     return step;
   }
 
+  /** 标记结束时间，并合并 finalAnswer / stopReason / error 等元信息 */
   finish(extra: Record<string, unknown> = {}): void {
     this.meta.finishedAt = new Date().toISOString();
     Object.assign(this.meta, extra);
@@ -141,6 +161,10 @@ export class TraceRecorder {
     };
   }
 
+  /**
+   * 写入 traces 目录：同时生成 *-latest.json 与带时间戳的副本。
+   * @returns latest 文件的绝对路径
+   */
   write(tracesDir: string, basename: string): string {
     mkdirSync(tracesDir, { recursive: true });
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");

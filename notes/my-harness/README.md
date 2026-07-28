@@ -21,6 +21,7 @@ npm run demo
 
 - **HTML + Node Server**（非 CLI）；`web/<stage>/` 按里程碑拆目录；`server/` 静态资源 + SSE `/api/run`。
 - **前端强制**：每阶段独立目录；HTML / CSS / JS 分文件；公共能力在 `web/shared/`（见 ROADMAP §8）。
+- **注释强制**：源码使用简体中文详尽注释（模块职责、关键步骤、协议边界）；见 ROADMAP §8.7。
 - 模型默认 `stream: true`；密钥仅 Server 读取 `.env`。
 
 ## 阶段结论
