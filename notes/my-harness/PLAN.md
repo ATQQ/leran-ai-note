@@ -242,4 +242,5 @@
 | M2 | **实现完成**：校验 / maxSteps / abort / timeout + `web/m2-guards/`；待本地勾选 V3/V4 |
 | M3 | **实现完成**：`assembleContext` + Trace 前后条数 + `web/m3-context/`；待本地勾选 V5 |
 | M4 | **实现完成**：SKILL 发现/目录/全文注入 + `web/m4-skill/`；待本地勾选 V6 |
-| M5 | 下一步（闸门通过后） |
+| M5 | **实现完成**：raw（手写）+ sdk（官方包）双 Host 对照 + `web/m5-mcp/`；待本地勾选 V7/V7b |
+| M6 | 下一步（闸门通过后） |

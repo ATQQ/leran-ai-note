@@ -1,0 +1,4 @@
+# hello from fs-sandbox
+
+这是 MCP Server 沙箱里的示例文件。
+可用工具 `read_file` 读取、`write_file` 覆盖。

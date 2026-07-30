@@ -149,6 +149,12 @@ Pi 对照：目录常驻 system；模型用 `read` 读 `SKILL.md`。本项目用
 - **看什么**：编辑 `history[]`，切 `recent_n` / `char_budget`，对照 before/after 与 `openaiRequest`。  
 - **页**：[`web/m3-context/`](./web/m3-context/index.html)
 
+### M5 · MCP
+
+- **看什么**：页面切换 **raw / sdk** 两种 Host；直连 `echo`/`add` 结果应一致；断开后 `mcp_unavailable`。  
+- **页**：[`web/m5-mcp/`](./web/m5-mcp/index.html)  
+- **心智**：MCP = 能力通道；SKILL = 规程文档。raw 看协议，sdk 看社区接入。
+
 ### M4 · SKILL
 
 - **看什么**：`agent` 模式下步骤出现 `load_skill`；tool 结果是 Markdown；`match`/`model` 则是 system 二次注入。  
@@ -181,6 +187,5 @@ Pi 对照：目录常驻 system；模型用 `read` 读 `SKILL.md`。本项目用
 
 ## 10. 下一步
 
-- M5 MCP 桥（stdio → ToolDef）  
 - M6 Anthropic Adapter（同场景第二厂商）  
-- 闸门 V3–V6：本地跑通后在 `PLAN.md` / `ROADMAP.md` 勾选  
+- 闸门 V3–V7：本地跑通后在 `PLAN.md` / `ROADMAP.md` 勾选  

@@ -79,9 +79,13 @@ notes/my-harness/
       history.js · steps.js
     m4-skill/
       index.html · style.css · main.js
+    m5-mcp/
+      index.html · style.css · main.js
   skills/
     weather-brief.md
     add-checklist.md
+  src/mcp/
+    host.ts · factory.ts · stdio-client.ts · sdk-client.ts · bridge.ts
   traces/
 ```
 
@@ -135,3 +139,30 @@ notes/my-harness/
 | 自动二次注入 | `skillAuto=match\|model` | Harness 分析后注入全文到 system |
 | Pi 风格 | `skillAuto=agent` + `load_skill` | 目录常驻；模型按需加载；tool 结果为 Markdown 正文（非 JSON 壳） |
 | 演示 | `web/m4-skill/` | 步骤拆解 + 出站 JSON 回溯 |
+
+## M5 MCP 工具桥
+
+| 能力 | 位置 | 说明 |
+|------|------|------|
+| 注册表 | `src/mcp/registry.ts` | **数组 catalog** + 多会话；`resolve(name)→Client` |
+| 同名策略 | **原名 + first-wins** | 对齐 Pi extensions（keep first）；冲突记入 `conflicts` |
+| 公共接口 | `src/mcp/host.ts` | `McpHostClient`：connect / list / call / close |
+| raw / sdk | `stdio-client.ts` / `sdk-client.ts` | 每个 Server 一个 Client 实例 |
+| 类型桥 | `src/mcp/bridge.ts` | 单 Client 的 call → ToolResult |
+| API | `/api/mcp/{status,connect,disconnect,call}` | connect 体：`{ servers:[], backend }` |
+| 演示 | `web/m5-mcp/` | 多选 Server + 路由表 + Loop 步骤 |
+
+### 调用找 Client
+
+```text
+模型 tool_calls.name = "read_file"
+  → loop.executeTool
+  → createExecuteGuarded
+  → mcpRegistry.execute(call)
+       resolve → catalog 中第一个拥有该名的 session
+       client.callTool("read_file", args)   // 原名不变
+```
+
+> Pi coding-agent **无内置 MCP**；同名行为对照的是扩展工具注册：
+> `keeps first tool when two extensions register the same name`。
+

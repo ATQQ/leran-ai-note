@@ -109,6 +109,8 @@ export type RunEvent = {
     | "tool_start"
     | "tool_end"
     | "skill_inject"
+    /** M5：MCP 连接/工具表合并说明（非 Loop 本体步骤） */
+    | "mcp_bridge"
     | "run_end"
     | "error";
   /** 与 demo Viewer 类似的阶段名，如 init / request_model / stream_parse */

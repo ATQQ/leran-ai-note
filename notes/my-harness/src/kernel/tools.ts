@@ -6,7 +6,7 @@
  * - executeMockTool：把 ToolCall 路由到实现，统一返回 ToolResult
  * - 执行前 schema 校验见 validate.ts（Server 走 executeToolWithValidation）
  *
- * M5 起会增加 MCP 后端；本文件保持「本地假数据」演示用。
+ * M5：MCP 后端见 src/mcp/；本文件保持「本地假数据」演示用。
  */
 import type { ToolCall, ToolDef, ToolResult } from "../types.ts";
 

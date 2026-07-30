@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>M5 · MCP 工具桥</title>
+    <link rel="stylesheet" href="../shared/shared.css" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main>
+      <p><a href="../index/index.html">← 索引</a></p>
+      <h1>M5 · MCP 工具桥</h1>
+      <p class="sub">
+        stdio 拉起 <code>notes/mcp-demo</code> → <code>tools/list</code> 成统一
+        <code>ToolDef</code> → 模型 / 直连 <code>tools/call</code> →
+        <code>ToolResult</code>。进程不可用须显式报错（V7b）。
+      </p>
+
+      <div class="card">
+        <div class="row panel-head">
+          <strong>① MCP 连接</strong>
+          <span id="mcpPill" class="pill">…</span>
+        </div>
+        <p class="hint">
+          多 Server 以<strong>注册表数组</strong>同时连接；工具名<strong>不改</strong>。
+          同名按 catalog 顺序 <code>first-wins</code>（对齐 Pi extensions）。
+          调用：<code>registry.resolve(name)</code> → 对应 Client。
+        </p>
+        <div class="controls">
+          <div class="field grow">
+            <span>MCP Servers（可多选）</span>
+            <div id="mcpServerList" class="server-list"></div>
+          </div>
+          <label class="field">
+            Host 后端
+            <select id="mcpBackend">
+              <option value="raw" selected>raw · 手写 JSON-RPC</option>
+              <option value="sdk">sdk · 官方 @modelcontextprotocol/sdk</option>
+            </select>
+          </label>
+        </div>
+        <p class="hint" id="serverHint">
+          说明见 <code>mcp-servers/README.md</code> ·
+          <code>src/mcp/registry.ts</code>
+        </p>
+        <div id="flowCompare" class="flow-compare"></div>
+        <p id="mcpMeta" class="hint">加载中…</p>
+        <div class="row">
+          <button type="button" id="btnConnect">连接勾选</button>
+          <button type="button" id="btnDisconnect" class="secondary">断开</button>
+          <button type="button" id="btnRefresh" class="secondary">刷新状态</button>
+        </div>
+        <div class="row panel-head" style="margin-top: 12px">
+          <strong>路由表（工具 → Client）</strong>
+        </div>
+        <pre id="routeTable" class="route-table">（连接后显示）</pre>
+        <div id="toolList" class="tool-list"></div>
+      </div>
+
+      <div class="card">
+        <div class="row panel-head">
+          <strong>①b JSON-RPC 格式（stdio 一行一帧）</strong>
+          <span class="pill">stdout 专给协议</span>
+        </div>
+        <p class="hint">
+          交互发生在 Host↔子进程的管道上：Host 写 Server 的 stdin，读 Server 的 stdout。
+          <code>console.log</code> 会污染协议；日志用 stderr。
+        </p>
+        <div class="rpc-cheat">
+          <div>
+            <div class="preview-label">请求（有 id = 要响应）</div>
+            <pre class="rpc-sample">{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "tools/call",
+  "params": {
+    "name": "read_file",
+    "arguments": { "path": "hello.txt" }
+  }
+}</pre>
+          </div>
+          <div>
+            <div class="preview-label">成功响应（同 id）</div>
+            <pre class="rpc-sample">{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "result": {
+    "content": [{ "type": "text", "text": "…" }],
+    "isError": false
+  }
+}</pre>
+          </div>
+          <div>
+            <div class="preview-label">通知（无 id，不期待响应）</div>
+            <pre class="rpc-sample">{
+  "jsonrpc": "2.0",
+  "method": "notifications/initialized",
+  "params": {}
+}</pre>
+          </div>
+          <div>
+            <div class="preview-label">握手顺序</div>
+            <pre class="rpc-sample">1. initialize          （请求）
+2. ← initialize result
+3. notifications/initialized
+4. tools/list
+5. tools/call …</pre>
+          </div>
+        </div>
+        <div class="row panel-head" style="margin-top: 12px">
+          <strong>线缆日志</strong>
+          <span id="wirePill" class="pill">empty</span>
+        </div>
+        <p class="hint">
+          raw = 真实管道行（wire）；sdk = 等价复原（logical，SDK 不暴露原文）。连接 / 直连后自动刷新。
+        </p>
+        <pre id="wireLog" class="wire-log">（连接或调用后显示 → / ← 帧）</pre>
+      </div>
+
+      <div class="card">
+        <div class="row panel-head"><strong>② 直连调用（不经模型）</strong></div>
+        <p class="hint">验证桥本身：Client → tools/call → ToolResult。</p>
+        <div class="controls">
+          <label class="field">
+            工具
+            <select id="directTool">
+              <option value="echo">echo</option>
+              <option value="add">add</option>
+            </select>
+          </label>
+          <label class="field grow">
+            arguments JSON
+            <input id="directArgs" type="text" value='{"text":"hello MCP"}' />
+          </label>
+        </div>
+        <div class="row">
+          <button type="button" id="btnDirect">直连调用</button>
+          <button type="button" class="secondary" data-direct="echo">echo</button>
+          <button type="button" class="secondary" data-direct="add">add</button>
+          <button type="button" class="secondary" data-direct="read">read_file</button>
+        </div>
+        <pre id="directResult" class="result-box">（尚未调用）</pre>
+      </div>
+
+      <div class="card">
+        <div class="row panel-head"><strong>③ 经模型 Agent Loop</strong></div>
+        <label class="check">
+          <input id="useMcp" type="checkbox" checked />
+          useMcp（合并 MCP tools；同名覆盖本地 mock）
+        </label>
+        <label for="prompt">用户请求</label>
+        <textarea id="prompt">
+用 echo 回显「MCP桥接成功」，再用 add 计算 12 加 30，最后用中文一句话总结。</textarea>
+        <div class="row">
+          <button type="button" class="secondary" data-prompt="v7">V7 demo</button>
+          <button type="button" class="secondary" data-prompt="fs">fs 读写</button>
+          <button type="button" class="secondary" data-prompt="both">跨 Server</button>
+        </div>
+        <div class="row">
+          <button id="run">运行</button>
+          <button id="stop" class="secondary" disabled>取消</button>
+          <span id="status" class="pill">idle</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row panel-head">
+          <strong>④ 步骤拆解（与模型交互）</strong>
+          <span class="pill">mcp_bridge → llm_request → tool → …</span>
+        </div>
+        <p class="hint">
+          点选步骤可看统一 payload 与出站 OpenAI body（对齐 M3/M4）。text_delta 碎片不进列表。
+        </p>
+        <div id="steps" class="steps"></div>
+      </div>
+
+      <div class="card">
+        <div class="row panel-head">
+          <strong>⑤ 详情 / JSON</strong>
+          <span id="detailPill" class="pill">点选步骤</span>
+        </div>
+        <div id="detailBody" class="detail-body">尚未选择步骤</div>
+        <div class="json-grid">
+          <div>
+            <div class="preview-label">payload / messages（统一类型）</div>
+            <pre id="jsonUnified" class="json-box">—</pre>
+          </div>
+          <div>
+            <div class="preview-label">出站 OpenAI body（无 Key）</div>
+            <pre id="jsonOpenAI" class="json-box accent">—</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row panel-head"><strong>流式文本</strong></div>
+        <div id="stream" class="stream panel"></div>
+      </div>
+
+      <div class="card">
+        <strong>事件流（简要）</strong>
+        <div id="events" class="events"></div>
+      </div>
+    </main>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

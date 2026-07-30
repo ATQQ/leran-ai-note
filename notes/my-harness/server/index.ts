@@ -7,6 +7,7 @@
  * 3. 读取 .env 中的模型密钥（绝不下发到浏览器）
  * 4. 将脱敏后的 Trace 写入 traces/
  * 5. M2：透传 maxSteps / timeoutMs / stopOnToolError；本地校验演示；取消时仍落盘 Trace
+ * 6. M5：stdio MCP Client 生命周期；useMcp 时把 MCP tools 挂进统一工具表
  *
  * 启动：npm run demo → http://127.0.0.1:8787/web/index/index.html
  */
@@ -34,6 +35,12 @@ import {
 import { MOCK_TOOLS, executeMockTool } from "../src/kernel/tools.ts";
 import { executeToolWithValidation } from "../src/kernel/validate.ts";
 import { loadEnv, packageRootFrom } from "../src/load-env.ts";
+import { parseMcpBackend } from "../src/mcp/factory.ts";
+import type { McpBackend } from "../src/mcp/host.ts";
+import {
+  McpRegistry,
+  mergeLocalAndMcpTools,
+} from "../src/mcp/registry.ts";
 import { TraceRecorder } from "../src/trace.ts";
 import type { RunEvent, ToolCall, ToolDef, UnifiedMessage } from "../src/types.ts";
 
@@ -47,6 +54,28 @@ const BASE = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replac
 );
 const KEY = process.env.OPENAI_API_KEY || "";
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+
+/**
+ * MCP Server 目录（数组/注册表形式，可同时连接多个）。
+ * 工具名保持 MCP 原名；同名按 catalog 顺序 first-wins（对齐 Pi extensions）。
+ */
+const mcpRegistry = new McpRegistry([
+  {
+    id: "demo",
+    label: "mcp-demo（并列 notes/mcp-demo）",
+    path: resolve(ROOT, "../mcp-demo/server.mjs"),
+    toolsHint: ["echo", "add"],
+  },
+  {
+    id: "fs",
+    label: "fs-sandbox（本项目 mcp-servers/）",
+    path: join(ROOT, "mcp-servers/fs-sandbox/server.mjs"),
+    toolsHint: ["list_files", "read_file", "write_file"],
+  },
+]);
+
+/** 默认 Host 后端（各 Server 会话可各自记录实际 backend） */
+let mcpBackend: McpBackend = "raw";
 
 /** 启动时扫描 skills/；热更可用后续 /api/skills/reload，M4 先静态发现 */
 const SKILLS_ROOT = join(ROOT, "skills");
@@ -100,7 +129,40 @@ type RunBody = {
    * - agent：Pi 风格，目录 + load_skill 工具，模型按需加载全文
    */
   skillAuto?: "off" | "match" | "model" | "agent";
+  /**
+   * M5：把已连接 MCP 的 tools（原名；同名 first-wins）并入本轮工具表。
+   */
+  useMcp?: boolean;
+  /** M5：MCP Host 后端 raw | sdk */
+  mcpBackend?: "raw" | "sdk";
+  /**
+   * M5：要使用的 MCP Server id 数组（可同时多个）。
+   * 兼容旧字段 mcpServer: string。
+   */
+  mcpServers?: string[];
+  /** @deprecated 用 mcpServers；单字符串时等价于 [mcpServer] */
+  mcpServer?: string;
 };
+
+function parseMcpServerIds(body: {
+  mcpServers?: unknown;
+  mcpServer?: unknown;
+  server?: unknown;
+  servers?: unknown;
+}): string[] {
+  const fromArr = body.mcpServers ?? body.servers;
+  if (Array.isArray(fromArr)) {
+    return fromArr.filter((x): x is string => typeof x === "string" && x.trim().length > 0);
+  }
+  const one = body.mcpServer ?? body.server;
+  if (typeof one === "string" && one.trim()) return [one.trim()];
+  const connected = mcpRegistry.connectedIds();
+  return connected.length ? connected : ["demo"];
+}
+
+function mcpStatusPayload() {
+  return mcpRegistry.statusPayload();
+}
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, {
@@ -151,13 +213,21 @@ function serveStatic(urlPath: string, res: http.ServerResponse): boolean {
   return true;
 }
 
-/** 带 schema 校验的执行入口；可挂上 load_skill（Pi 风格） */
-function createExecuteGuarded(tools: ToolDef[], skills: SkillDef[]) {
+/** 带 schema 校验的执行入口；按名路由 load_skill / MCP registry / 本地 mock */
+function createExecuteGuarded(
+  tools: ToolDef[],
+  skills: SkillDef[],
+  mcpNames: Set<string>,
+) {
   return async (call: ToolCall) => {
     if (call.name === "load_skill") {
       return executeToolWithValidation(call, tools, async (c) =>
         executeLoadSkill(c, skills),
       );
+    }
+    // 多 Server：先 resolve Client，再 call（见 McpRegistry.execute）
+    if (mcpNames.has(call.name) || mcpRegistry.isMcpToolName(call.name)) {
+      return executeToolWithValidation(call, tools, (c) => mcpRegistry.execute(c));
     }
     return executeToolWithValidation(call, tools, executeMockTool);
   };
@@ -263,7 +333,9 @@ async function runLocalGuardDemo(
     at: new Date().toISOString(),
   });
 
-  const result = await createExecuteGuarded(MOCK_TOOLS, DISCOVERED_SKILLS)(call);
+  const result = await createExecuteGuarded(MOCK_TOOLS, DISCOVERED_SKILLS, new Set())(
+    call,
+  );
   const toolMessage = {
     role: "tool" as const,
     content: result.content,
@@ -392,6 +464,111 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return;
   }
 
+  // ---------- M5 MCP ----------
+  if (req.method === "GET" && pathname === "/api/mcp/status") {
+    sendJson(res, 200, mcpStatusPayload());
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/mcp/connect") {
+    let body: {
+      backend?: string;
+      server?: string;
+      servers?: string[];
+    } = {};
+    try {
+      const raw = await readBody(req);
+      if (raw) body = JSON.parse(raw) as typeof body;
+    } catch {
+      sendJson(res, 400, { error: "invalid JSON body" });
+      return;
+    }
+    try {
+      const backend = parseMcpBackend(body.backend ?? mcpBackend);
+      mcpBackend = backend;
+      const ids = parseMcpServerIds(body);
+      const result = await mcpRegistry.connectMany(ids, backend);
+      sendJson(res, 200, {
+        ok: result.failed.length === 0,
+        connected: result.ok,
+        failed: result.failed,
+        tools: result.tools,
+        conflicts: result.conflicts,
+        conflictPolicy: "first-wins",
+        status: mcpStatusPayload(),
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      sendJson(res, 500, { ok: false, error: message, status: mcpStatusPayload() });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/mcp/disconnect") {
+    let body: { server?: string } = {};
+    try {
+      const raw = await readBody(req);
+      if (raw) body = JSON.parse(raw) as typeof body;
+    } catch {
+      /* 无 body = 全断 */
+    }
+    await mcpRegistry.disconnect(
+      typeof body.server === "string" ? body.server : undefined,
+    );
+    sendJson(res, 200, {
+      ok: true,
+      note: "已断开；工具 schema 缓存仍保留，便于测不可用错误 / 路由演示",
+      status: mcpStatusPayload(),
+    });
+    return;
+  }
+
+  /** 不经模型，直接 tools/call（验证路由 + 桥接） */
+  if (req.method === "POST" && pathname === "/api/mcp/call") {
+    let body: { name?: string; arguments?: Record<string, unknown> } = {};
+    try {
+      const raw = await readBody(req);
+      if (raw) body = JSON.parse(raw) as typeof body;
+    } catch {
+      sendJson(res, 400, { error: "invalid JSON body" });
+      return;
+    }
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    if (!name) {
+      sendJson(res, 400, { error: "name required（推荐 echo / add / read_file）" });
+      return;
+    }
+    const call: ToolCall = {
+      id: "direct_" + Date.now(),
+      name,
+      arguments:
+        body.arguments && typeof body.arguments === "object" && !Array.isArray(body.arguments)
+          ? body.arguments
+          : {},
+    };
+    const route = mcpRegistry.resolve(name);
+    const toolsForValidate = mcpRegistry.getToolDefs();
+    const result = await executeToolWithValidation(
+      call,
+      toolsForValidate.length
+        ? toolsForValidate
+        : [{ name, description: name, parameters: { type: "object" } }],
+      (c) => mcpRegistry.execute(c),
+    );
+    sendJson(res, 200, {
+      result,
+      route: route
+        ? {
+            serverId: route.serverId,
+            name,
+            connected: route.connected,
+          }
+        : null,
+      status: mcpStatusPayload(),
+    });
+    return;
+  }
+
   // 主入口：流式跑一轮 Agent（或本地守卫演示）
   if (req.method === "POST" && pathname === "/api/run") {
     let body: RunBody = {};
@@ -463,6 +640,11 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       skillAutoRaw === "agent"
         ? skillAutoRaw
         : "off";
+    const useMcp = Boolean(body.useMcp);
+    const runMcpBackend = body.mcpBackend
+      ? parseMcpBackend(body.mcpBackend)
+      : mcpBackend;
+    const runMcpServers = parseMcpServerIds(body);
 
     // 浏览器断开连接 → abort → loop / fetch 停止
     const ac = new AbortController();
@@ -473,13 +655,56 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       apiKey: KEY,
       model: MODEL,
     });
-    // 主任务 tools 可能含 load_skill；onEvent 出站 JSON 跟同一份
+    // 主任务 tools 可能含 load_skill / 多 MCP；onEvent 出站 JSON 跟同一份
     let runTools: ToolDef[] = MOCK_TOOLS;
+    let mcpNames = new Set<string>();
+    let mcpConnectNote: string | null = null;
+    let mcpRoutePreview: Array<{ name: string; serverId: string }> = [];
+    let mcpConflicts: Array<{
+      name: string;
+      winnerServerId: string;
+      skippedServerId: string;
+    }> = [];
+
+    if (useMcp) {
+      mcpBackend = runMcpBackend;
+      try {
+        const result = await mcpRegistry.connectMany(runMcpServers, runMcpBackend);
+        mcpConflicts = result.conflicts;
+        mcpConnectNote =
+          "registry connectMany=[" +
+          result.ok.join(",") +
+          "]" +
+          (result.failed.length
+            ? " failed=" + result.failed.map((f) => f.id).join(",")
+            : "") +
+          (result.conflicts.length
+            ? " conflicts=" +
+              result.conflicts
+                .map((c) => c.name + "(" + c.winnerServerId + ">" + c.skippedServerId + ")")
+                .join(",")
+            : "") +
+          " · backend=" +
+          runMcpBackend;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        mcpConnectNote = "MCP 连接失败：" + message;
+      }
+      const mcpDefs = mcpRegistry.getToolDefs(runMcpServers);
+      mcpNames = new Set(mcpDefs.map((t) => t.name));
+      mcpRoutePreview = mcpDefs.map((t) => ({
+        name: t.name,
+        serverId: t.mcpServerId,
+      }));
+      // 同名：MCP 覆盖本地 mock；多 MCP 内部已 first-wins
+      runTools = mergeLocalAndMcpTools(MOCK_TOOLS, mcpDefs);
+    }
+
     const trace = new TraceRecorder({
       provider: "openai",
       model: MODEL,
       baseUrl: BASE,
-      toolsSchema: openaiToolsSchemaForTrace(MOCK_TOOLS),
+      toolsSchema: openaiToolsSchemaForTrace(runTools),
     });
 
     const onEvent = (event: RunEvent) => {
@@ -602,11 +827,40 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
 
     // Pi 风格：把 load_skill 挂进本轮 tools
     runTools = planned.enableLoadSkillTool
-      ? [...MOCK_TOOLS, LOAD_SKILL_TOOL]
-      : MOCK_TOOLS;
-    const executeTool = createExecuteGuarded(runTools, DISCOVERED_SKILLS);
-    // Trace 记录实际发给模型的 tools（含或不含 load_skill）
+      ? [...runTools, LOAD_SKILL_TOOL]
+      : runTools;
+    const executeTool = createExecuteGuarded(
+      runTools,
+      DISCOVERED_SKILLS,
+      mcpNames,
+    );
+    // Trace 记录实际发给模型的 tools（含或不含 load_skill / MCP）
     trace.toolsSchema = openaiToolsSchemaForTrace(runTools);
+
+    if (useMcp) {
+      onEvent({
+        type: "mcp_bridge",
+        phase: "init",
+        title: "MCP 多 Server 注册表",
+        summary:
+          (mcpConnectNote || "") +
+          " · tools=[" +
+          [...mcpNames].join(", ") +
+          "]",
+        actor: "harness",
+        direction: "local",
+        payload: {
+          useMcp: true,
+          conflictPolicy: "first-wins",
+          conflicts: mcpConflicts,
+          routeTable: mcpRoutePreview,
+          mcp: mcpStatusPayload(),
+          mergedToolNames: runTools.map((t) => t.name),
+        },
+        note: "executeTool → registry.resolve(name) → Client.callTool(name)（原名；同名先者胜）",
+        at: new Date().toISOString(),
+      });
+    }
 
     for (const ph of planned.phases) {
       onEvent({
@@ -659,6 +913,14 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       catalogNames: skillAsm.catalogNames,
       injectSource: planned.injectSource,
       loadSkillTool: planned.enableLoadSkillTool,
+      useMcp,
+      mcpBackend: mcpBackend,
+      mcpServers: runMcpServers,
+      mcpConnected: mcpRegistry.connectedIds(),
+      mcpTools: [...mcpNames],
+      mcpConflictPolicy: "first-wins",
+      mcpConflicts,
+      tools: runTools.map((t) => t.name),
     });
 
     try {
@@ -756,4 +1018,38 @@ server.listen(PORT, "127.0.0.1", () => {
   console.log(
     `skills: ${DISCOVERED_SKILLS.length} → ${DISCOVERED_SKILLS.map((s) => s.name).join(", ") || "(none)"}`,
   );
+  console.log(
+    `mcp catalog: ${mcpRegistry
+      .listCatalog()
+      .map((s) => s.id + (s.exists ? "" : "(missing)"))
+      .join(", ")}`,
+  );
+  // 启动时默认连 demo；可再连 fs。失败不阻断 HTTP Server
+  void mcpRegistry
+    .connectMany(["demo"], "raw")
+    .then((r) => {
+      console.log(
+        `mcp: connected=[${r.ok.join(",")}] · tools=${r.tools.map((t) => t.name).join(", ") || "(none)"}`,
+      );
+      if (r.failed.length) {
+        console.error("mcp: partial fail", r.failed);
+      }
+    })
+    .catch((err) => {
+      console.error(
+        "mcp: auto-connect failed —",
+        err instanceof Error ? err.message : err,
+      );
+    });
+});
+
+async function shutdown(): Promise<void> {
+  await mcpRegistry.shutdown();
+  process.exit(0);
+}
+process.on("SIGINT", () => {
+  void shutdown();
+});
+process.on("SIGTERM", () => {
+  void shutdown();
 });
