@@ -23,11 +23,19 @@ import {
   createAssembleContext,
 } from "../src/kernel/context.ts";
 import { runAgent } from "../src/kernel/loop.ts";
+import {
+  discoverSkills,
+  executeLoadSkill,
+  formatSkillCatalog,
+  LOAD_SKILL_TOOL,
+  planSkillInjection,
+  type SkillDef,
+} from "../src/kernel/skills.ts";
 import { MOCK_TOOLS, executeMockTool } from "../src/kernel/tools.ts";
 import { executeToolWithValidation } from "../src/kernel/validate.ts";
 import { loadEnv, packageRootFrom } from "../src/load-env.ts";
 import { TraceRecorder } from "../src/trace.ts";
-import type { RunEvent, ToolCall, UnifiedMessage } from "../src/types.ts";
+import type { RunEvent, ToolCall, ToolDef, UnifiedMessage } from "../src/types.ts";
 
 const ROOT = packageRootFrom(import.meta.url);
 loadEnv(ROOT);
@@ -39,6 +47,10 @@ const BASE = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replac
 );
 const KEY = process.env.OPENAI_API_KEY || "";
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
+
+/** 启动时扫描 skills/；热更可用后续 /api/skills/reload，M4 先静态发现 */
+const SKILLS_ROOT = join(ROOT, "skills");
+let DISCOVERED_SKILLS: SkillDef[] = discoverSkills(SKILLS_ROOT);
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -78,6 +90,16 @@ type RunBody = {
    * 服务端会做角色与字段白名单清洗。
    */
   history?: unknown[];
+  /** M4：是否把 SKILL 目录（name+description）写入 system */
+  skillCatalog?: boolean;
+  /** M4：要注入全文的 skill name 列表（手动） */
+  injectSkills?: string[];
+  /**
+   * M4：未手动指定时的策略
+   * - off / match / model：见 skills.ts
+   * - agent：Pi 风格，目录 + load_skill 工具，模型按需加载全文
+   */
+  skillAuto?: "off" | "match" | "model" | "agent";
 };
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
@@ -129,9 +151,16 @@ function serveStatic(urlPath: string, res: http.ServerResponse): boolean {
   return true;
 }
 
-/** 带 schema 校验的执行入口（未知工具 / 非法参数在此拦截） */
-function executeGuarded(call: ToolCall) {
-  return executeToolWithValidation(call, MOCK_TOOLS, executeMockTool);
+/** 带 schema 校验的执行入口；可挂上 load_skill（Pi 风格） */
+function createExecuteGuarded(tools: ToolDef[], skills: SkillDef[]) {
+  return async (call: ToolCall) => {
+    if (call.name === "load_skill") {
+      return executeToolWithValidation(call, tools, async (c) =>
+        executeLoadSkill(c, skills),
+      );
+    }
+    return executeToolWithValidation(call, tools, executeMockTool);
+  };
 }
 
 /**
@@ -234,7 +263,7 @@ async function runLocalGuardDemo(
     at: new Date().toISOString(),
   });
 
-  const result = await executeGuarded(call);
+  const result = await createExecuteGuarded(MOCK_TOOLS, DISCOVERED_SKILLS)(call);
   const toolMessage = {
     role: "tool" as const,
     content: result.content,
@@ -339,6 +368,30 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return;
   }
 
+  // M4：已发现的 SKILL 列表（不含全文，避免列表接口过大；全文在注入时进 system）
+  if (req.method === "GET" && pathname === "/api/skills") {
+    sendJson(res, 200, {
+      root: "skills/",
+      skills: DISCOVERED_SKILLS.map((s) => ({
+        name: s.name,
+        description: s.description,
+        path: s.path,
+        bodyChars: s.body.length,
+      })),
+    });
+    return;
+  }
+
+  if (req.method === "POST" && pathname === "/api/skills/reload") {
+    DISCOVERED_SKILLS = discoverSkills(SKILLS_ROOT);
+    sendJson(res, 200, {
+      ok: true,
+      count: DISCOVERED_SKILLS.length,
+      names: DISCOVERED_SKILLS.map((s) => s.name),
+    });
+    return;
+  }
+
   // 主入口：流式跑一轮 Agent（或本地守卫演示）
   if (req.method === "POST" && pathname === "/api/run") {
     let body: RunBody = {};
@@ -393,10 +446,181 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     if (typeof body.prompt === "string" && body.prompt.trim()) {
       prompt = body.prompt.trim();
     }
-    const systemPrompt =
+    const baseSystem =
       typeof body.systemPrompt === "string" && body.systemPrompt.trim()
         ? body.systemPrompt.trim()
         : "你是助手。需要天气或加法时必须调用工具，不要编造工具结果。";
+
+    const skillCatalog = Boolean(body.skillCatalog);
+    const injectSkills = Array.isArray(body.injectSkills)
+      ? body.injectSkills.filter((n): n is string => typeof n === "string")
+      : [];
+    const skillAutoRaw = body.skillAuto;
+    const skillAuto: "off" | "match" | "model" | "agent" =
+      skillAutoRaw === "match" ||
+      skillAutoRaw === "model" ||
+      skillAutoRaw === "off" ||
+      skillAutoRaw === "agent"
+        ? skillAutoRaw
+        : "off";
+
+    // 浏览器断开连接 → abort → loop / fetch 停止
+    const ac = new AbortController();
+    req.on("close", () => ac.abort());
+
+    const adapter = createOpenAIAdapter({
+      baseUrl: BASE,
+      apiKey: KEY,
+      model: MODEL,
+    });
+    // 主任务 tools 可能含 load_skill；onEvent 出站 JSON 跟同一份
+    let runTools: ToolDef[] = MOCK_TOOLS;
+    const trace = new TraceRecorder({
+      provider: "openai",
+      model: MODEL,
+      baseUrl: BASE,
+      toolsSchema: openaiToolsSchemaForTrace(MOCK_TOOLS),
+    });
+
+    const onEvent = (event: RunEvent) => {
+      if (event.type === "llm_request" && event.payload && typeof event.payload === "object") {
+        const p = event.payload as Record<string, unknown>;
+        const after = p.messagesAfter;
+        if (Array.isArray(after)) {
+          p.openaiRequest = buildOpenAIRequestInspect({
+            model: MODEL,
+            messages: after as UnifiedMessage[],
+            tools: runTools,
+          });
+        }
+      }
+      if (event.type !== "text_delta") {
+        trace.addFromEvent(event);
+      }
+      writeSse(res, event.type, event);
+    };
+
+    // M4：若选 model 自动分析，先用「仅目录」问模型要哪些 skill（无 tools）
+    let preselected: string[] | undefined;
+    if (
+      skillAuto === "model" &&
+      !injectSkills.length &&
+      !/\/skill(?::|\s+)/.test(prompt) &&
+      DISCOVERED_SKILLS.length
+    ) {
+      const catalogText = formatSkillCatalog(DISCOVERED_SKILLS);
+      const classifyMessages: UnifiedMessage[] = [
+        {
+          role: "system",
+          content:
+            "你是 SKILL 路由器。只输出一行 JSON：{\"skills\":[\"name\",...]}。" +
+            "从目录中选与用户任务相关的 skill name；都不相关则 {\"skills\":[]}。" +
+            "不要输出其它文字，不要调用工具。",
+        },
+        {
+          role: "user",
+          content: catalogText + "\n\n用户任务：\n" + prompt,
+        },
+      ];
+      onEvent({
+        type: "skill_inject",
+        phase: "skill",
+        title: "自动分析 · 请求模型分类",
+        summary: "仅带目录、无 tools；解析 JSON 后再二次注入全文",
+        actor: "harness",
+        direction: "out",
+        payload: {
+          mode: "model_classify",
+          messages: classifyMessages,
+          openaiRequest: buildOpenAIRequestInspect({
+            model: MODEL,
+            messages: classifyMessages,
+            tools: [],
+          }),
+        },
+        note: "渐进披露：先目录，后全文",
+        at: new Date().toISOString(),
+      });
+      try {
+        const classified = await adapter.stream({
+          messages: classifyMessages,
+          tools: [],
+          signal: ac.signal,
+        });
+        const raw = classified.content || "";
+        onEvent({
+          type: "skill_inject",
+          phase: "skill",
+          title: "自动分析 · 模型分类结果",
+          summary: raw.slice(0, 200) || "(空)",
+          actor: "model",
+          direction: "in",
+          payload: { content: raw },
+          at: new Date().toISOString(),
+        });
+        const jsonMatch = raw.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          try {
+            const parsed = JSON.parse(jsonMatch[0]) as { skills?: unknown };
+            if (Array.isArray(parsed.skills)) {
+              preselected = parsed.skills.filter(
+                (n): n is string => typeof n === "string",
+              );
+            }
+          } catch {
+            preselected = [];
+          }
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        onEvent({
+          type: "error",
+          phase: "skill",
+          title: "SKILL 模型分类失败",
+          summary: message,
+          actor: "harness",
+          direction: "local",
+          payload: { error: message },
+          at: new Date().toISOString(),
+        });
+        // 回退：不注入全文，继续跑主任务
+        preselected = [];
+      }
+    }
+
+    const planned = planSkillInjection({
+      baseSystem,
+      skills: DISCOVERED_SKILLS,
+      prompt,
+      skillCatalog,
+      injectSkills,
+      skillAuto,
+      preselected,
+    });
+    const skillAsm = planned.result;
+    const systemPrompt = skillAsm.systemContent;
+
+    // Pi 风格：把 load_skill 挂进本轮 tools
+    runTools = planned.enableLoadSkillTool
+      ? [...MOCK_TOOLS, LOAD_SKILL_TOOL]
+      : MOCK_TOOLS;
+    const executeTool = createExecuteGuarded(runTools, DISCOVERED_SKILLS);
+    // Trace 记录实际发给模型的 tools（含或不含 load_skill）
+    trace.toolsSchema = openaiToolsSchemaForTrace(runTools);
+
+    for (const ph of planned.phases) {
+      onEvent({
+        type: "skill_inject",
+        phase: "skill",
+        title: ph.title,
+        summary: ph.summary,
+        actor: "harness",
+        direction: "local",
+        payload: ph.payload,
+        note: "SKILL 渐进披露阶段",
+        at: new Date().toISOString(),
+      });
+    }
 
     // M3：历史来源优先页面构造的 history；否则 seedPairs 填充
     const historyFromClient = Array.isArray(body.history)
@@ -416,42 +640,6 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       maxChars,
     });
 
-    // 浏览器断开连接 → abort → loop / fetch 停止
-    const ac = new AbortController();
-    req.on("close", () => ac.abort());
-
-    const adapter = createOpenAIAdapter({
-      baseUrl: BASE,
-      apiKey: KEY,
-      model: MODEL,
-    });
-    const trace = new TraceRecorder({
-      provider: "openai",
-      model: MODEL,
-      baseUrl: BASE,
-      toolsSchema: openaiToolsSchemaForTrace(MOCK_TOOLS),
-    });
-
-    const onEvent = (event: RunEvent) => {
-      // M3：在推送/落盘前补上「真实出站 JSON」（不含 Authorization）
-      if (event.type === "llm_request" && event.payload && typeof event.payload === "object") {
-        const p = event.payload as Record<string, unknown>;
-        const after = p.messagesAfter;
-        if (Array.isArray(after)) {
-          p.openaiRequest = buildOpenAIRequestInspect({
-            model: MODEL,
-            messages: after as UnifiedMessage[],
-            tools: MOCK_TOOLS,
-          });
-        }
-      }
-      // text_delta 只推前端，不写入 Trace；stream_detail 等其余事件落盘
-      if (event.type !== "text_delta") {
-        trace.addFromEvent(event);
-      }
-      writeSse(res, event.type, event);
-    };
-
     writeSse(res, "meta", {
       model: MODEL,
       adapter: "openai",
@@ -465,14 +653,20 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       historySource: historyFromClient ? "client" : seedPairs > 0 ? "seed" : "none",
       historyCount: historyMessages.length,
       initialMessageCount: initialMessages.length,
+      skillCatalog,
+      skillAuto,
+      injectSkills: skillAsm.injectedNames,
+      catalogNames: skillAsm.catalogNames,
+      injectSource: planned.injectSource,
+      loadSkillTool: planned.enableLoadSkillTool,
     });
 
     try {
       const result = await runAgent({
         prompt,
         messages: initialMessages,
-        tools: MOCK_TOOLS,
-        executeTool: executeGuarded,
+        tools: runTools,
+        executeTool,
         adapter,
         maxSteps,
         timeoutMs,
@@ -487,13 +681,20 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         contextStrategy,
         historySource: historyFromClient ? "client" : seedPairs > 0 ? "seed" : "none",
         historyCount: historyMessages.length,
+        skillCatalog,
+        injectedSkills: skillAsm.injectedNames,
+        catalogNames: skillAsm.catalogNames,
+        injectSource: planned.injectSource,
+        loadSkillTool: planned.enableLoadSkillTool,
       });
       const path = trace.write(join(ROOT, "traces"), "openai");
-      // done：前端据此结束 UI 状态并加载 Trace
       writeSse(res, "done", {
         finalText: result.finalText,
         stopReason: result.stopReason,
         tracePath: path,
+        injectedSkills: skillAsm.injectedNames,
+        injectSource: planned.injectSource,
+        loadSkillTool: planned.enableLoadSkillTool,
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -552,4 +753,7 @@ server.listen(PORT, "127.0.0.1", () => {
   console.log(`my-harness demo: http://127.0.0.1:${PORT}/web/index/index.html`);
   console.log(`health: http://127.0.0.1:${PORT}/api/health`);
   console.log(`model: ${MODEL} @ ${BASE}`);
+  console.log(
+    `skills: ${DISCOVERED_SKILLS.length} → ${DISCOVERED_SKILLS.map((s) => s.name).join(", ") || "(none)"}`,
+  );
 });

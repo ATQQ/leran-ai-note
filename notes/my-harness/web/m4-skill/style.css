@@ -1,0 +1,223 @@
+/**
+ * M4 页样式：步骤卡 + JSON 对照
+ */
+
+.hint {
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.panel-head {
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 12px;
+  align-items: flex-end;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: var(--muted);
+  min-width: 220px;
+}
+
+.field select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font: inherit;
+}
+
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  margin-bottom: 4px;
+}
+
+.check input {
+  width: auto;
+}
+
+.skill-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.skill-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: var(--bg);
+}
+
+.skill-card label {
+  display: flex;
+  gap: 10px;
+  margin: 0;
+  color: var(--text);
+  cursor: pointer;
+  align-items: flex-start;
+}
+
+.skill-card input {
+  width: auto;
+  margin-top: 3px;
+}
+
+.skill-name {
+  font-weight: 600;
+  font-family: var(--mono);
+}
+
+.skill-desc {
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.strategy-help {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.strategy-help h3 {
+  margin: 0 0 6px;
+  font-size: 0.88rem;
+  color: var(--accent);
+}
+
+.strategy-help ol {
+  margin: 0;
+  padding-left: 1.2em;
+}
+
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 420px;
+  overflow: auto;
+  min-height: 4em;
+}
+
+.step-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: var(--bg);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  color: inherit;
+  font: inherit;
+}
+
+.step-card:hover {
+  border-color: var(--accent);
+}
+
+.step-card.is-active {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.step-card.is-skill {
+  border-color: var(--warn);
+}
+
+.step-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.step-title {
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.step-summary {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  white-space: pre-wrap;
+  margin-top: 4px;
+}
+
+.detail-body {
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: var(--muted);
+  margin-bottom: 12px;
+  white-space: pre-wrap;
+}
+
+.json-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.preview-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.json-box {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  white-space: pre-wrap;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.json-box.accent {
+  border-color: var(--accent);
+}
+
+.stream.panel {
+  min-height: 6em;
+  max-height: 280px;
+  overflow: auto;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 800px) {
+  .json-grid {
+    grid-template-columns: 1fr;
+  }
+}

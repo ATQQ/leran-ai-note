@@ -108,6 +108,7 @@ export type RunEvent = {
     | "assistant_message"
     | "tool_start"
     | "tool_end"
+    | "skill_inject"
     | "run_end"
     | "error";
   /** 与 demo Viewer 类似的阶段名，如 init / request_model / stream_parse */

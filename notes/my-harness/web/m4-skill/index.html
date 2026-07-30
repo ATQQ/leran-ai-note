@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>M4 · SKILL 注入</title>
+    <link rel="stylesheet" href="../shared/shared.css" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main>
+      <p><a href="../index/index.html">← 索引</a></p>
+      <h1>M4 · SKILL 渐进披露</h1>
+      <p class="sub">
+        常规路径对照：match/model 由 Harness 二次注入；
+        <strong>agent</strong> 对齐 Pi（目录 + 模型调用 load_skill 读全文）。
+        步骤卡可回溯每一阶段与出站 JSON。
+      </p>
+
+      <div class="card">
+        <div class="row panel-head">
+          <strong>① 发现的 SKILL</strong>
+          <button type="button" id="reloadSkills" class="secondary">重新扫描</button>
+          <span id="skillStatus" class="pill">loading</span>
+        </div>
+        <div id="skillList" class="skill-list"></div>
+        <p class="hint">勾选 = 手动指定全文（优先级高于自动分析）。留空勾选则可测「自动二次注入」。</p>
+      </div>
+
+      <div class="card">
+        <div class="row panel-head"><strong>② 注入策略</strong></div>
+        <div class="controls">
+          <label class="check">
+            <input id="skillCatalog" type="checkbox" checked />
+            写入目录摘要（第一层）
+          </label>
+          <label class="field">
+            自动分析（未手动指定时）
+            <select id="skillAuto">
+              <option value="off">off · 不自动</option>
+              <option value="match">match · 启发式匹配后二次注入</option>
+              <option value="model">model · 模型分类后二次注入</option>
+              <option value="agent" selected>agent · Pi 风格（load_skill 工具）</option>
+            </select>
+          </label>
+        </div>
+        <div class="strategy-help" id="strategyHelp"></div>
+
+        <label for="prompt">用户请求</label>
+        <textarea id="prompt">
+帮我查一下深圳的天气，再用工具算一下 12 加 30，最后用中文简短总结。</textarea>
+        <div class="row">
+          <button type="button" class="secondary" data-prompt="v6">V6 天气+加法</button>
+          <button type="button" class="secondary" data-prompt="weather">只问天气</button>
+          <button type="button" class="secondary" data-prompt="cmd">/skill:weather-brief</button>
+        </div>
+        <div class="row">
+          <button id="run">运行</button>
+          <button id="stop" class="secondary" disabled>取消</button>
+          <span id="status" class="pill">idle</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row panel-head">
+          <strong>③ 步骤拆解</strong>
+          <span class="pill">catalog → 分析/工具 → llm_request</span>
+        </div>
+        <div id="steps" class="steps"></div>
+      </div>
+
+      <div class="card">
+        <div class="row panel-head">
+          <strong>④ 详情 / JSON</strong>
+          <span id="detailPill" class="pill">点选步骤</span>
+        </div>
+        <div id="detailBody" class="detail-body">尚未选择步骤</div>
+        <div class="json-grid">
+          <div>
+            <div class="preview-label">payload / messages（统一类型）</div>
+            <pre id="jsonUnified" class="json-box">—</pre>
+          </div>
+          <div>
+            <div class="preview-label">出站 OpenAI body（无 Key）</div>
+            <pre id="jsonOpenAI" class="json-box accent">—</pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row panel-head"><strong>流式文本</strong></div>
+        <div id="stream" class="stream panel"></div>
+      </div>
+
+      <div class="card">
+        <strong>事件流（简要）</strong>
+        <div id="events" class="events"></div>
+      </div>
+    </main>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

@@ -458,7 +458,7 @@ interface RunEvent {
 
 1. ~~确认统一类型字段命名与实现语言（建议 TypeScript）。~~ 已采用 TS（Node strip-types）。
 2. ~~完成 M0。~~ 见 `architecture.md`。
-3. ~~进入 M1。~~ 已通过 V1/V2；~~M2~~ **M2/M3 已实现**；本地勾选 V3–V5 后进入 **M4**。
+3. ~~进入 M1。~~ 已通过 V1/V2；~~M2/M3~~ **M2–M4 已实现**；本地勾选 V3–V6 后进入 **M5**。
 
 ---
 

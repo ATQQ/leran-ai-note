@@ -72,6 +72,11 @@ notes/my-harness/
     m3-context/
       index.html · style.css · main.js
       history.js · steps.js
+    m4-skill/
+      index.html · style.css · main.js
+  skills/
+    weather-brief.md
+    add-checklist.md
   traces/
 ```
 
@@ -113,3 +118,15 @@ notes/my-harness/
 | Trace | `llm_request.payload.context` | before/after 条数与字符、preview 摘要 |
 | 出站 JSON | `llm_request.payload.openaiRequest` | 真实 Chat Completions body（无 Key） |
 | 页面历史 | `history[]` 优先于 `seedPairs` | m3 页可编辑构造 Context |
+
+## M4 SKILL 渐进披露
+
+| 能力 | 位置 | 说明 |
+|------|------|------|
+| 发现 | `skills/*.md` 或 `*/SKILL.md` | frontmatter: `name` / `description` |
+| 第一层 | `skillCatalog` → system 目录摘要 | 仅元数据 |
+| 第二层 | `injectSkills` 或 prompt `/skill:name` | 注入全文 |
+| Trace | `skill_inject` 多阶段事件 | catalog → auto_match/model → full_inject |
+| 自动二次注入 | `skillAuto=match\|model` | Harness 分析后注入全文到 system |
+| Pi 风格 | `skillAuto=agent` + `load_skill` | 目录常驻；模型按需加载；tool 结果为 Markdown 正文（非 JSON 壳） |
+| 演示 | `web/m4-skill/` | 步骤拆解 + 出站 JSON 回溯 |
