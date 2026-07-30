@@ -12,7 +12,7 @@
       <p><a href="../index/index.html">← 索引</a></p>
       <h1>M1 · 统一内核 + OpenAI（默认流式）</h1>
       <p class="sub">
-        固定演示：查天气 + 加法 → 最终中文总结。页面只展示 SSE 增量与 Trace；密钥在 Server。
+        固定演示：查天气 + 加法 → 最终中文总结。可见流式轮次、协议碎片拼接与 Trace 卡片回放。
       </p>
 
       <div class="card">
@@ -30,13 +30,21 @@
       <div class="card">
         <div class="row panel-head">
           <strong>流式文本</strong>
-          <span class="pill">按轮次分块，不重复贴全量</span>
+          <span class="pill">按轮次分块</span>
         </div>
         <div id="stream" class="stream"></div>
       </div>
 
       <div class="card">
-        <strong>事件流</strong>
+        <div class="row panel-head">
+          <strong>协议时间线</strong>
+          <span class="pill">文本/工具每帧全记，不省略</span>
+        </div>
+        <div id="timeline" class="timeline"></div>
+      </div>
+
+      <div class="card">
+        <strong>事件流（简要）</strong>
         <div id="events" class="events"></div>
       </div>
 
@@ -47,7 +55,10 @@
           <button id="next" class="secondary">下一步</button>
           <span id="stepLabel" class="pill">0 / 0</span>
         </div>
-        <div id="trace" class="trace">尚未加载</div>
+        <div class="trace-layout">
+          <div id="traceRail" class="trace-rail"></div>
+          <div id="trace" class="trace-main">尚未加载</div>
+        </div>
       </div>
     </main>
     <script type="module" src="./main.js"></script>

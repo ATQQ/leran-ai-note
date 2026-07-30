@@ -27,4 +27,4 @@ npm run demo
 ## 阶段结论
 
 - **M0**：定稿统一类型与分层；见 `architecture.md`。
-- **M1**：`kernel/loop` + `adapters/openai`（默认流式）+ `web/m1-openai-loop/`；固定多工具 prompt 可完成循环；Trace 写入 `traces/openai-latest.json`。闸门 V1/V2 已本地验证。
+- **M1**：`kernel/loop` + `adapters/openai`（默认流式）+ `web/m1-openai-loop/`；固定多工具 prompt 可完成循环；`stream_detail` 协议时间线；Trace 卡片回放并可重建过程。闸门 V1/V2 已本地验证。

@@ -2,7 +2,9 @@
  * M1 页局部样式
  * 公共主题变量与组件样式见 ../shared/shared.css
  *
- * 流式区按「轮次」分块：看得见 ROUND1 / 工具 / ROUND2 的时间线
+ * - 流式区按「轮次」分块
+ * - 协议时间线：工具碎片 / 文本汇总 / 解析完成
+ * - Trace：目录 + 结构化卡片（原始 JSON 折叠）
  */
 
 .panel-head {
@@ -15,6 +17,8 @@
   flex-direction: column;
   gap: 10px;
   min-height: 6em;
+  max-height: 360px;
+  overflow: auto;
 }
 
 .round {
@@ -59,4 +63,178 @@
   color: var(--accent);
   border-left: 2px solid var(--accent);
   margin-left: 4px;
+}
+
+/* —— 协议时间线 —— */
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 420px;
+  overflow: auto;
+  min-height: 4em;
+}
+
+.tl-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border-left: 3px solid var(--border);
+}
+
+.tl-card.kind-tool_fragment {
+  border-left-color: var(--warn);
+}
+
+.tl-card.kind-text_fragment {
+  border-left-color: var(--accent);
+}
+
+.tl-card.kind-text_summary {
+  border-left-color: var(--muted);
+}
+
+.tl-card.kind-tool_parse_done {
+  border-left-color: var(--ok);
+}
+
+.tl-head {
+  font-size: 0.78rem;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.tl-summary {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-top: 2px;
+  font-family: var(--mono);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.tl-note {
+  margin-top: 6px;
+  font-size: 0.72rem;
+  color: var(--accent);
+}
+
+.tl-grid {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 4px 8px;
+  margin-top: 8px;
+  font-size: 0.75rem;
+}
+
+.tl-k {
+  color: var(--muted);
+}
+
+.tl-v {
+  font-family: var(--mono);
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--text);
+}
+
+.tl-json {
+  margin: 8px 0 0;
+  padding: 8px;
+  background: #0c1117;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  overflow: auto;
+  max-height: 200px;
+}
+
+/* —— Trace 回放 —— */
+.trace-layout {
+  display: grid;
+  grid-template-columns: minmax(160px, 240px) 1fr;
+  gap: 12px;
+  min-height: 220px;
+}
+
+@media (max-width: 720px) {
+  .trace-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.trace-rail {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  max-height: 360px;
+  overflow: auto;
+  background: var(--bg);
+  padding: 4px;
+}
+
+.trace-rail-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 0.72rem;
+  font-weight: 400;
+  cursor: pointer;
+  font-family: var(--mono);
+}
+
+.trace-rail-item:hover {
+  background: #141b22;
+  color: var(--text);
+}
+
+.trace-rail-item.active {
+  background: #1a2836;
+  color: var(--accent);
+}
+
+.trace-main {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  max-height: 360px;
+  overflow: auto;
+  background: var(--bg);
+  font-size: 0.85rem;
+}
+
+.trace-card h3 {
+  margin: 0 0 6px;
+  font-size: 1rem;
+}
+
+.trace-meta {
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-family: var(--mono);
+  margin-bottom: 8px;
+}
+
+.trace-summary {
+  margin: 0 0 8px;
+}
+
+.trace-note {
+  margin: 0 0 8px;
+  color: var(--accent);
+  font-size: 0.8rem;
+}
+
+.trace-main details {
+  margin-top: 10px;
+}
+
+.trace-main summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.8rem;
 }

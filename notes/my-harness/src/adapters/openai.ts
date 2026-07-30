@@ -2,14 +2,15 @@
  * OpenAI Chat Completions 兼容 Adapter（一期默认 Provider）
  *
  * 出站：UnifiedMessage[] + ToolDef[] → messages / tools / tool_choice，且 stream:true
- * 入站：解析 SSE chunk → onTextDelta + 流结束时的完整 UnifiedMessage
+ * 入站：解析 SSE chunk → onTextDelta + onStreamDetail + 流结束时的完整 UnifiedMessage
  *
  * 注意：
  * - 厂商字段（tool_calls、role:"tool"、tool_call_id）只出现在本文件
  * - 工具 arguments 在流式场景是分片字符串，必须拼完再 JSON.parse，再交给内核
  * - 部分中转站会带 reasoning_content：记入 UnifiedMessage.reasoning，不当最终答复
+ * - onStreamDetail 把「按 index 拼碎片」过程暴露给学习 UI / Trace（text 只汇总，工具全记）
  */
-import type { LlmAdapter, ToolDef, UnifiedMessage } from "../types.ts";
+import type { LlmAdapter, StreamDetail, ToolDef, UnifiedMessage } from "../types.ts";
 
 type OpenAIConfig = {
   baseUrl: string;
@@ -127,7 +128,7 @@ export function createOpenAIAdapter(config: OpenAIConfig): LlmAdapter {
   return {
     name: "openai",
 
-    async stream({ messages, tools, signal, onTextDelta }) {
+    async stream({ messages, tools, signal, onTextDelta, onStreamDetail }) {
       const url = `${base}/chat/completions`;
       const body = {
         model: config.model,
@@ -157,8 +158,14 @@ export function createOpenAIAdapter(config: OpenAIConfig): LlmAdapter {
 
       let content = "";
       let reasoning = "";
+      let textDeltaCount = 0;
       // index → 累加中的 tool_call（流式 name/arguments 可能分多片到达）
+      // 为何用 Map：一次请求会产生很多 SSE JSON 帧，同一 index 的碎片要拼到同一桶
       const toolAcc = new Map<number, OpenAIToolCallAcc>();
+
+      const emitDetail = (detail: StreamDetail) => {
+        onStreamDetail?.(detail);
+      };
 
       for await (const line of iterateSseLines(res.body, signal)) {
         const trimmed = line.trim();
@@ -189,17 +196,26 @@ export function createOpenAIAdapter(config: OpenAIConfig): LlmAdapter {
         const delta = json.choices?.[0]?.delta;
         if (!delta) continue;
 
-        // 文本增量：立刻回调，供前端打字机展示
+        // 文本增量：接口按多帧 SSE 陆续返回（常为一字/短片段），不是一次给全文
+        // 一边 onTextDelta 打字机，一边 text_fragment 记入时间线/Trace
         if (typeof delta.content === "string" && delta.content) {
           content += delta.content;
+          textDeltaCount += 1;
           onTextDelta?.(delta.content);
+          emitDetail({
+            kind: "text_fragment",
+            seq: textDeltaCount,
+            delta: delta.content,
+            accContent: content,
+          });
         }
         // 推理增量：只累加，默认不推给用户可见区（由上层决定是否展示）
         if (typeof delta.reasoning_content === "string" && delta.reasoning_content) {
           reasoning += delta.reasoning_content;
         }
 
-        // 工具调用增量：按 index 拼接，流结束后再 parse（禁止半截 JSON 就执行）
+        // 工具调用增量：按 index 拼接，每拼一帧就发 tool_fragment（学习可见）
+        // 禁止半截 JSON 就执行——要等流结束后 parseArgs
         if (delta.tool_calls) {
           for (const tc of delta.tool_calls) {
             const idx = tc.index ?? 0;
@@ -208,12 +224,32 @@ export function createOpenAIAdapter(config: OpenAIConfig): LlmAdapter {
               acc = { id: "", name: "", arguments: "" };
               toolAcc.set(idx, acc);
             }
+            const nameDelta = tc.function?.name || undefined;
+            const argumentsDelta = tc.function?.arguments || undefined;
             if (tc.id) acc.id = tc.id;
-            if (tc.function?.name) acc.name += tc.function.name;
-            if (tc.function?.arguments) acc.arguments += tc.function.arguments;
+            if (nameDelta) acc.name += nameDelta;
+            if (argumentsDelta) acc.arguments += argumentsDelta;
+
+            emitDetail({
+              kind: "tool_fragment",
+              index: idx,
+              id: acc.id || undefined,
+              nameDelta,
+              argumentsDelta,
+              accName: acc.name,
+              accArguments: acc.arguments,
+            });
           }
         }
       }
+
+      // 流结束：文本汇总（完整 content + 帧数统计）
+      emitDetail({
+        kind: "text_summary",
+        deltaCount: textDeltaCount,
+        contentLength: content.length,
+        content,
+      });
 
       // 流结束：转成统一 ToolCall（arguments 已是对象）
       const toolCalls = [...toolAcc.entries()]
@@ -223,6 +259,10 @@ export function createOpenAIAdapter(config: OpenAIConfig): LlmAdapter {
           name: acc.name,
           arguments: parseArgs(acc.arguments),
         }));
+
+      if (toolCalls.length) {
+        emitDetail({ kind: "tool_parse_done", toolCalls });
+      }
 
       const message: UnifiedMessage = {
         role: "assistant",

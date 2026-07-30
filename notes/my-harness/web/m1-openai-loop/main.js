@@ -1,20 +1,33 @@
 /**
- * M1 演示页逻辑：OpenAI 流式循环 + Trace 回放
+ * M1 演示页逻辑：OpenAI 流式循环 + 协议时间线 + Trace 卡片回放
  *
  * 页面只负责：
  * - 收集 prompt、发起 POST /api/run
- * - 按「轮次」展示流式文本（看得见哪一轮返回了什么）
- * - 加载 traces/openai-latest.json 逐步回放
+ * - 按「轮次」展示流式文本
+ * - 协议时间线展示 stream_detail（工具碎片拼接过程）
+ * - 加载 Trace 后重建轮次 + 时间线，并以卡片回放步骤
  *
  * 密钥与模型调用全部在 Server；本文件不得出现 API Key。
  */
 import { runSse } from "../shared/shared.js";
+import {
+  appendTimelineCard,
+  clearTimeline,
+  rebuildTimelineFromSteps,
+} from "./timeline.js";
+import {
+  rebuildStreamFromSteps,
+  rebuildEventsFromSteps,
+  renderTraceChrome,
+} from "./trace-view.js";
 
 const promptEl = document.getElementById("prompt");
 const streamEl = document.getElementById("stream");
+const timelineEl = document.getElementById("timeline");
 const eventsEl = document.getElementById("events");
 const statusEl = document.getElementById("status");
 const traceEl = document.getElementById("trace");
+const traceRailEl = document.getElementById("traceRail");
 const stepLabel = document.getElementById("stepLabel");
 const runBtn = document.getElementById("run");
 const stopBtn = document.getElementById("stop");
@@ -81,42 +94,48 @@ function appendToolBanner(text) {
   streamEl.scrollTop = streamEl.scrollHeight;
 }
 
-/** 把当前 step 渲染到 Trace 面板 */
-function renderStep() {
-  if (!steps.length) {
-    stepLabel.textContent = "0 / 0";
-    traceEl.textContent = "无步骤";
-    return;
-  }
-  const s = steps[stepIndex];
-  stepLabel.textContent = `${stepIndex + 1} / ${steps.length}`;
-  traceEl.textContent = JSON.stringify(s, null, 2);
+function refreshTraceChrome() {
+  stepLabel.textContent = steps.length
+    ? `${stepIndex + 1} / ${steps.length}`
+    : "0 / 0";
+  renderTraceChrome(traceRailEl, traceEl, steps, stepIndex, (i) => {
+    stepIndex = i;
+    refreshTraceChrome();
+  });
 }
 
-prevBtn.onclick = () => {
-  if (stepIndex > 0) {
-    stepIndex -= 1;
-    renderStep();
-  }
-};
-
-nextBtn.onclick = () => {
-  if (stepIndex < steps.length - 1) {
-    stepIndex += 1;
-    renderStep();
-  }
-};
-
-/** 从 Server 拉取最近一次脱敏 Trace */
+/**
+ * 加载 Trace：卡片回放 + 重建流式轮次与协议时间线
+ */
 async function loadTrace() {
   const res = await fetch("/api/trace/latest");
   if (!res.ok) throw new Error("no trace");
   const data = await res.json();
   steps = data.steps || [];
   stepIndex = 0;
-  renderStep();
+  refreshTraceChrome();
+  // 重建过程视图（与现场运行同构）：轮次、协议时间线、事件流简要
+  rebuildStreamFromSteps(streamEl, steps);
+  rebuildTimelineFromSteps(timelineEl, steps);
+  rebuildEventsFromSteps(eventsEl, steps);
+  currentRound = null;
+  roundHasText = false;
   return data;
 }
+
+prevBtn.onclick = () => {
+  if (stepIndex > 0) {
+    stepIndex -= 1;
+    refreshTraceChrome();
+  }
+};
+
+nextBtn.onclick = () => {
+  if (stepIndex < steps.length - 1) {
+    stepIndex += 1;
+    refreshTraceChrome();
+  }
+};
 
 reloadTraceBtn.onclick = async () => {
   try {
@@ -136,6 +155,7 @@ runBtn.onclick = async () => {
   runBtn.disabled = true;
   stopBtn.disabled = false;
   clearStream();
+  clearTimeline(timelineEl);
   eventsEl.textContent = "";
   setStatus("running");
 
@@ -166,6 +186,27 @@ runBtn.onclick = async () => {
           currentRound.body.textContent += delta;
           roundHasText = true;
           streamEl.scrollTop = streamEl.scrollHeight;
+          return;
+        }
+
+        // 协议细节：文本碎片 / 工具碎片 / 汇总 / 解析完成 → 时间线 + 事件流（不省略）
+        if (event === "stream_detail") {
+          appendTimelineCard(timelineEl, data);
+          const kind = data.payload?.kind;
+          if (kind === "text_fragment") {
+            const p = data.payload;
+            appendEvent(
+              `[text #${p.seq}] +${JSON.stringify(p.delta)} → ${JSON.stringify(p.accContent)}`,
+            );
+          } else if (kind === "tool_fragment") {
+            appendEvent(`[tool-frag] ${data.summary || data.title}`);
+          } else if (kind === "text_summary") {
+            appendEvent(`[text-sum] ${data.summary || ""}`);
+          } else if (kind === "tool_parse_done") {
+            appendEvent(`[tool-parse] ${data.summary || ""}`);
+          } else {
+            appendEvent(`[stream] ${data.summary || data.title}`);
+          }
           return;
         }
 

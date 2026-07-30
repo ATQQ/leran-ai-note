@@ -54,6 +54,44 @@ export type ToolResult = {
   isError?: boolean;
 };
 
+/**
+ * Adapter 流式解析细节（学习向）。
+ * - text_fragment：每一帧文本增量（接口逐片返回，我们自己 += 成 accContent）
+ * - text_summary：本轮结束后的完整 content + 统计
+ * - tool_fragment：每个协议碎片（按 index 累加）全记，便于看 arguments+=
+ * - tool_parse_done：拼完后 JSON.parse 的最终 ToolCall[]
+ */
+export type StreamDetail =
+  | {
+      kind: "text_fragment";
+      /** 本轮第几帧文本增量（从 1 起） */
+      seq: number;
+      /** 本帧新增的字符串（可能是一字、一词或一小段） */
+      delta: string;
+      /** 截至本帧拼好的全文 */
+      accContent: string;
+    }
+  | {
+      kind: "text_summary";
+      deltaCount: number;
+      contentLength: number;
+      /** 本轮拼好的完整文本（不截断） */
+      content: string;
+    }
+  | {
+      kind: "tool_fragment";
+      index: number;
+      id?: string;
+      nameDelta?: string;
+      argumentsDelta?: string;
+      accName: string;
+      accArguments: string;
+    }
+  | {
+      kind: "tool_parse_done";
+      toolCalls: ToolCall[];
+    };
+
 export type RunEventActor = "harness" | "model" | "tool";
 export type RunEventDirection = "out" | "in" | "local";
 
@@ -66,12 +104,13 @@ export type RunEvent = {
     | "run_start"
     | "llm_request"
     | "text_delta"
+    | "stream_detail"
     | "assistant_message"
     | "tool_start"
     | "tool_end"
     | "run_end"
     | "error";
-  /** 与 demo Viewer 类似的阶段名，如 init / request_model / execute_tool */
+  /** 与 demo Viewer 类似的阶段名，如 init / request_model / stream_parse */
   phase: string;
   title: string;
   summary: string;
@@ -96,6 +135,7 @@ export type LlmAdapter = {
   /**
    * 默认流式调用：
    * - onTextDelta：边收边推文本增量（供浏览器打字机效果）
+   * - onStreamDetail：工具碎片 / 文本汇总 / 解析完成（供协议时间线与 Trace）
    * - 返回值：流结束后的完整 assistant UnifiedMessage（含已解析的 toolCalls）
    */
   stream: (input: {
@@ -103,6 +143,7 @@ export type LlmAdapter = {
     tools: ToolDef[];
     signal?: AbortSignal;
     onTextDelta?: (delta: string) => void;
+    onStreamDetail?: (detail: StreamDetail) => void;
   }) => Promise<UnifiedMessage>;
 };
 

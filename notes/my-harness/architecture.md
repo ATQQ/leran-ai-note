@@ -19,7 +19,7 @@ server/index.ts
   ▼
 kernel/loop.ts
   │  assembleContext(state) → UnifiedMessage[]
-  │  adapter.stream(...) → text_delta + 完整 assistant
+  │  adapter.stream(...) → text_delta + stream_detail + 完整 assistant
   │  若有 ToolCall → registry.execute → 回写 tool 消息 → 再请求
   ▼
 adapters/openai.ts（一期）
@@ -31,12 +31,24 @@ adapters/openai.ts（一期）
 |--------------------------|-----------------|----------------------|
 | `init` | — | `run_start` |
 | `request_model` | `turn_start` + 发往 LLM | `llm_request` |
-| （流式增量） | `message_update` / `text_delta` | `text_delta` |
+| （流式增量） | `message_update` / `text_delta` | `text_delta`（推 UI，**不落盘**） |
+| （流式解析细节） | — | `stream_detail`（工具碎片全记；文本仅汇总；**落盘**） |
 | `model_response` | `message_end`（assistant） | `assistant_message` |
 | `execute_tool` | `tool_execution_start` | `tool_start` |
 | `append_tool_result` | `tool_execution_end` + toolResult message | `tool_end` |
 | `final_answer` | `agent_end` | `run_end` |
 | `error` | — | `error` |
+
+### `stream_detail` 约定
+
+| `payload.kind` | 含义 | Trace |
+|----------------|------|-------|
+| `tool_fragment` | 某一 SSE 帧的工具碎片（按 index 累加） | 全记 |
+| `text_fragment` | 每一帧文本增量（`delta` + 自拼 `accContent`） | 全记 |
+| `text_summary` | 本轮完整 content + 帧数统计 | 记 |
+| `tool_parse_done` | 流结束、`arguments` 已 parse 为对象 | 记 |
+
+M1 页：`协议时间线` 实时展示；加载 Trace 后重建轮次 + 时间线 + 卡片回放（非纯 JSON）。
 
 ## 目录
 
@@ -52,7 +64,9 @@ notes/my-harness/
   web/
     shared/shared.css · shared.js
     index/index.html · index.css · index.js
-    m1-openai-loop/index.html · style.css · main.js
+    m1-openai-loop/
+      index.html · style.css · main.js
+      timeline.js · trace-view.js
     m2-guards/ …（后续）
   traces/
 ```

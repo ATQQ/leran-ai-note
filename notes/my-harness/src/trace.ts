@@ -82,7 +82,8 @@ export class TraceRecorder {
 
   /**
    * 从 RunEvent 记一步。
-   * text_delta 不落盘（流式碎片太多）；完整内容看 assistant_message。
+   * - text_delta：仍推 UI 打字机；细节落盘用 stream_detail.text_fragment
+   * - stream_detail：落盘（文本碎片、文本汇总、工具碎片、解析完成）
    */
   addFromEvent(event: RunEvent): TraceStep {
     if (event.type === "text_delta") {

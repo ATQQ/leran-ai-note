@@ -191,7 +191,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     });
 
     const onEvent = (event: RunEvent) => {
-      // text_delta 只推前端，不写入 Trace 步骤列表
+      // text_delta 只推前端，不写入 Trace；stream_detail 等其余事件落盘
       if (event.type !== "text_delta") {
         trace.addFromEvent(event);
       }

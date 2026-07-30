@@ -68,7 +68,7 @@
 | 1.5 | `src/kernel/loop.ts`：请求 → 解析调用 → 执行 → 回写 → 再请求，直至无 tool_calls | **文件内无** `tool_calls` / `role:"tool"` 等 OpenAI 专有名 |
 | 1.6 | `src/trace.ts`：写 `traces/*-latest.json`；密钥脱敏 | 字段可与 FC demo Viewer 对齐 |
 | 1.7 | `server/`：静态资源 + `POST /api/run`（SSE）；读 env；调 kernel | 密钥不进响应头/前端 |
-| 1.8 | `web/index/` + `web/m1-openai-loop/`（HTML/CSS/JS 分文件 + shared） | 可见文本 delta、工具摘要、Trace 回放区 |
+| 1.8 | `web/index/` + `web/m1-openai-loop/`（分文件 + 协议时间线 + Trace 卡片） | 可见文本 delta、工具碎片、Trace 卡片回放 |
 | 1.9 | `npm run demo` 可启动 | `http://127.0.0.1:<port>/web/index/index.html` |
 
 ### 验证闸门（对应 V1、V2）
@@ -77,7 +77,8 @@
 |----|------|------|
 | V1 | 固定多工具 prompt（经 m1 页） | 多次工具调用后得到最终文本；页面有流式增量 |
 | V1b | 观察工具时机 | 工具在流段结束后完整解析再执行（非半截 JSON 就执行） |
-| V2 | 打开 Trace / 回放 | 可逐步看请求、响应、回写 |
+| V2 | 打开 Trace / 回放 | 卡片逐步查看；加载后重建轮次 + 协议时间线 |
+| V2b | 协议时间线 | 可见同一 index 的 `arguments+=` 增长，并有 `tool_parse_done` |
 | V1c | 扫 `kernel/loop.ts` | 无 OpenAI 专有字段名 |
 | V1d | 扫前端与网络面板 | 无 API Key 明文 |
 

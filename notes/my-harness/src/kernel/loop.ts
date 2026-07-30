@@ -10,7 +10,7 @@
  * - 禁止写入 OpenAI 线格式字段名（如 tool_calls）；协议转换留给 Adapter
  * - 对应 Pi：agent-core 的循环 + 事件；对应学习笔记：Harness 强制项（步数/取消）
  */
-import type { RunEvent, RunOptions, UnifiedMessage } from "../types.ts";
+import type { RunEvent, RunOptions, StreamDetail, UnifiedMessage } from "../types.ts";
 
 /** 给事件补上 ISO 时间戳后交给订阅方（SSE / Trace） */
 function emit(onEvent: RunOptions["onEvent"], event: Omit<RunEvent, "at">): void {
@@ -20,6 +20,54 @@ function emit(onEvent: RunOptions["onEvent"], event: Omit<RunEvent, "at">): void
 /** M3 之前的默认 Context 策略：原样发送全部历史 */
 function identity(messages: UnifiedMessage[]): UnifiedMessage[] {
   return messages;
+}
+
+/** 把 Adapter 的 StreamDetail 转成人类可读的 title / summary */
+function describeStreamDetail(
+  roundLabel: string,
+  detail: StreamDetail,
+): { title: string; summary: string; note: string | null } {
+  if (detail.kind === "text_fragment") {
+    return {
+      title: `${roundLabel} · 文本碎片 #${detail.seq}`,
+      // 事件流 / Trace 目录直接展示本帧与累计全文，不省略
+      summary: `+${JSON.stringify(detail.delta)} → ${JSON.stringify(detail.accContent)}`,
+      note: "接口逐帧返回文本；delta=本帧，accContent=自拼累计",
+    };
+  }
+  if (detail.kind === "text_summary") {
+    return {
+      title: `${roundLabel} · 文本流汇总`,
+      summary: `共 ${detail.deltaCount} 帧，总长度 ${detail.contentLength}`,
+      note: "本轮全部 text_fragment 拼完后的完整 content",
+    };
+  }
+  if (detail.kind === "tool_fragment") {
+    const bits: string[] = [`#${detail.index}`];
+    if (detail.nameDelta) bits.push(`name+=${JSON.stringify(detail.nameDelta)}`);
+    if (detail.argumentsDelta) {
+      const d =
+        detail.argumentsDelta.length > 40
+          ? `${detail.argumentsDelta.slice(0, 40)}…`
+          : detail.argumentsDelta;
+      bits.push(`arguments+=${JSON.stringify(d)}`);
+    }
+    if (!detail.nameDelta && !detail.argumentsDelta && detail.id) {
+      bits.push(`id=${detail.id}`);
+    }
+    return {
+      title: `${roundLabel} · 工具碎片 #${detail.index}`,
+      summary: bits.join(" · "),
+      note: "同一 index 的多帧拼到同一桶；禁止半截 JSON 就执行",
+    };
+  }
+  // tool_parse_done
+  const names = detail.toolCalls.map((c) => c.name).join(", ");
+  return {
+    title: `${roundLabel} · 工具解析完成`,
+    summary: `${detail.toolCalls.length} 个 ToolCall：${names || "(无)"}`,
+    note: "arguments 已 JSON.parse 为对象，可供 Harness 执行",
+  };
 }
 
 /**
@@ -103,6 +151,20 @@ export async function runAgent(opts: RunOptions): Promise<{
           actor: "model",
           direction: "in",
           payload: { delta },
+        });
+      },
+      onStreamDetail: (detail) => {
+        // 工具碎片 / 文本汇总 / 解析完成 → 推 UI 且写入 Trace（见 Server 落盘策略）
+        const desc = describeStreamDetail(roundLabel, detail);
+        emit(opts.onEvent, {
+          type: "stream_detail",
+          phase: "stream_parse",
+          title: desc.title,
+          summary: desc.summary,
+          actor: "model",
+          direction: "in",
+          payload: detail,
+          note: desc.note,
         });
       },
     });
