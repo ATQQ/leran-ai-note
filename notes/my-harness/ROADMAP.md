@@ -184,11 +184,11 @@ notes/my-harness/
 
 **验证**
 
-- [ ] 固定用户请求可完成「多工具调用 → 最终文本答复」。
-- [ ] 浏览器页面可见流式文本增量；工具调用在流段结束后完整解析并执行。
-- [ ] 生成 `traces/*-latest.json`；同页或独立回放区可逐步查看；字段可与 `function-call-demo` Viewer 对齐。
-- [ ] `kernel/loop.ts` 不出现 OpenAI 专有字段名（如 `tool_calls`、`role: "tool"`）；此类字段仅出现在 Adapter。
-- [ ] 密钥不出现在前端代码或响应头明文中。
+- [x] 固定用户请求可完成「多工具调用 → 最终文本答复」。
+- [x] 浏览器页面可见流式文本增量；工具调用在流段结束后完整解析并执行。
+- [x] 生成 `traces/*-latest.json`；同页或独立回放区可逐步查看；字段可与 `function-call-demo` Viewer 对齐。
+- [x] `kernel/loop.ts` 不出现 OpenAI 专有字段名（如 `tool_calls`、`role: "tool"`）；此类字段仅出现在 Adapter。
+- [x] 密钥不出现在前端代码或响应头明文中。
 
 ---
 
@@ -208,8 +208,8 @@ notes/my-harness/
 
 **验证**
 
-- [ ] 错误参数或未知工具名产生明确 ToolResult；循环按策略继续或停止；页面可展示错误事件。
-- [ ] `maxSteps=1` 时强制终止，Trace 记录终止原因。
+- [x] 错误参数或未知工具名产生明确 ToolResult；循环按策略继续或停止；页面可展示错误事件。
+- [x] `maxSteps=1` 时强制终止，Trace 记录终止原因。
 
 ---
 
@@ -458,7 +458,7 @@ interface RunEvent {
 
 1. ~~确认统一类型字段命名与实现语言（建议 TypeScript）。~~ 已采用 TS（Node strip-types）。
 2. ~~完成 M0。~~ 见 `architecture.md`。
-3. ~~进入 M1。~~ 已通过 V1/V2；~~下一步 M2~~ **M2 已实现**（`web/m2-guards/`）；本地勾选 V3/V4 后进入 **M3**。
+3. ~~进入 M1。~~ 已通过 V1/V2；~~M2~~ **M2/M3 已实现**；本地勾选 V3–V5 后进入 **M4**。
 
 ---
 

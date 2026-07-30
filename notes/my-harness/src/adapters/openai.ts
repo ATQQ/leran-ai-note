@@ -26,7 +26,7 @@ type OpenAIToolCallAcc = {
 };
 
 /** 统一消息 → OpenAI messages（含 tool / tool_calls 线格式） */
-function toOpenAIMessages(messages: UnifiedMessage[]): unknown[] {
+export function toOpenAIMessages(messages: UnifiedMessage[]): unknown[] {
   const out: unknown[] = [];
   for (const m of messages) {
     if (m.role === "tool") {
@@ -62,7 +62,7 @@ function toOpenAIMessages(messages: UnifiedMessage[]): unknown[] {
 }
 
 /** 统一 ToolDef → OpenAI tools[]（type:function 包裹） */
-function toOpenAITools(tools: ToolDef[]): unknown[] {
+export function toOpenAITools(tools: ToolDef[]): unknown[] {
   return tools.map((t) => ({
     type: "function",
     function: {
@@ -71,6 +71,30 @@ function toOpenAITools(tools: ToolDef[]): unknown[] {
       parameters: t.parameters,
     },
   }));
+}
+
+/**
+ * 组装「即将 POST 给 Chat Completions」的请求体形状（不含 Authorization）。
+ * 供 M3 页对照学习：裁剪后的 UnifiedMessage 如何变成厂商 JSON。
+ */
+export function buildOpenAIRequestInspect(input: {
+  model: string;
+  messages: UnifiedMessage[];
+  tools: ToolDef[];
+}): {
+  model: string;
+  messages: unknown[];
+  tools: unknown[];
+  tool_choice: "auto";
+  stream: true;
+} {
+  return {
+    model: input.model,
+    messages: toOpenAIMessages(input.messages),
+    tools: toOpenAITools(input.tools),
+    tool_choice: "auto",
+    stream: true,
+  };
 }
 
 /** 流结束后把拼接好的 arguments 字符串解析为对象，供内核使用 */

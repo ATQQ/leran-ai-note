@@ -11,15 +11,57 @@
  * - 对应 Pi：agent-core 的循环 + 事件；对应学习笔记：Harness 强制项（步数/取消/超时）
  */
 import type { RunEvent, RunOptions, StreamDetail, UnifiedMessage } from "../types.ts";
+import { assembleIdentity, estimateChars, summarizeMessage } from "./context.ts";
 
 /** 给事件补上 ISO 时间戳后交给订阅方（SSE / Trace） */
 function emit(onEvent: RunOptions["onEvent"], event: Omit<RunEvent, "at">): void {
   onEvent?.({ ...event, at: new Date().toISOString() });
 }
 
-/** M3 之前的默认 Context 策略：原样发送全部历史 */
-function identity(messages: UnifiedMessage[]): UnifiedMessage[] {
-  return messages;
+/**
+ * 归一化 assembleContext 返回值（兼容只返回数组的旧写法）。
+ * 始终带上 before/after 条数与字符数，供 Trace / m3 页审计。
+ */
+function runAssemble(
+  assemble: NonNullable<RunOptions["assembleContext"]>,
+  messages: UnifiedMessage[],
+): {
+  messages: UnifiedMessage[];
+  meta: {
+    strategy: string;
+    beforeCount: number;
+    afterCount: number;
+    beforeChars: number;
+    afterChars: number;
+    droppedCount: number;
+    params?: Record<string, unknown>;
+    note?: string;
+    preview: ReturnType<typeof summarizeMessage>[];
+  };
+} {
+  const raw = assemble(messages);
+  const forModel = Array.isArray(raw) ? raw : raw.messages;
+  const fromHook = Array.isArray(raw) ? undefined : raw.meta;
+  const beforeCount = messages.length;
+  const afterCount = forModel.length;
+  const beforeChars = estimateChars(messages);
+  const afterChars = estimateChars(forModel);
+  return {
+    messages: forModel,
+    meta: {
+      strategy: fromHook?.strategy ?? (beforeCount === afterCount ? "identity" : "custom"),
+      beforeCount: fromHook?.beforeCount ?? beforeCount,
+      afterCount: fromHook?.afterCount ?? afterCount,
+      beforeChars: fromHook?.beforeChars ?? beforeChars,
+      afterChars: fromHook?.afterChars ?? afterChars,
+      droppedCount:
+        fromHook?.droppedCount ?? Math.max(0, beforeCount - afterCount),
+      params: fromHook?.params,
+      note: fromHook?.note,
+      // 发往模型的摘要（截断 preview）；完整内容仍在 forModel，此处只为 UI 对照
+      preview: forModel.map(summarizeMessage),
+    },
+  };
 }
 
 /**
@@ -142,7 +184,7 @@ export async function runAgent(opts: RunOptions): Promise<{
   stopReason: string;
 }> {
   const maxSteps = opts.maxSteps ?? 8;
-  const assemble = opts.assembleContext ?? identity;
+  const assemble = opts.assembleContext ?? assembleIdentity;
   const stopOnToolError = opts.stopOnToolError ?? false;
   const { signal, timedOut, cleanup } = mergeSignals(opts.signal, opts.timeoutMs);
 
@@ -190,21 +232,29 @@ export async function runAgent(opts: RunOptions): Promise<{
 
       steps += 1;
       const roundLabel = `ROUND${steps}`;
-      // 发往模型前走钩子：M3 可在此裁剪历史
-      const forModel = assemble(messages);
+      // 发往模型前只走 assembleContext：裁剪的是「视图」，内存 messages 仍完整
+      const assembled = runAssemble(assemble, messages);
+      const forModel = assembled.messages;
+      const ctx = assembled.meta;
 
       emit(opts.onEvent, {
         type: "llm_request",
         phase: "request_model",
         title: `${roundLabel} · 请求模型`,
-        summary: `经 Adapter「${opts.adapter.name}」流式请求，messages=${forModel.length}`,
+        summary: `策略=${ctx.strategy} · messages ${ctx.beforeCount}→${ctx.afterCount} · chars ${ctx.beforeChars}→${ctx.afterChars}`,
         actor: "harness",
         direction: "out",
         payload: {
           adapter: opts.adapter.name,
           messageCount: forModel.length,
           toolNames: opts.tools.map((t) => t.name),
+          context: ctx,
+          /** 裁剪前：Harness 内存中的完整轨迹（统一类型） */
+          messagesBefore: structuredClone(messages),
+          /** 裁剪后：真正交给 Adapter 的 messages（统一类型） */
+          messagesAfter: structuredClone(forModel),
         },
+        note: ctx.note ?? null,
       });
 
       // Adapter 内部做协议转换 + 流式解析；此处只拿到统一 assistant 消息

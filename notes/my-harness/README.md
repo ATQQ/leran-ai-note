@@ -29,3 +29,4 @@ npm run demo
 - **M0**：定稿统一类型与分层；见 `architecture.md`。
 - **M1**：`kernel/loop` + `adapters/openai`（默认流式）+ `web/m1-openai-loop/`；固定多工具 prompt 可完成循环；`stream_detail` 协议时间线；Trace 卡片回放并可重建过程。闸门 V1/V2 已本地验证。
 - **M2**：`maxSteps` / `timeoutMs` / 取消 abort；`kernel/validate.ts` 执行前 schema 校验；`stopOnToolError`；`web/m2-guards/` 场景页（含不经模型的 `localGuard`）。闸门 V3/V4 待你本地勾选。
+- **M3**：`kernel/context.ts`（identity / recent_n / char_budget）+ `llm_request` Trace 记录裁剪前后条数；`web/m3-context/` 对照页；`seedPairs` 灌长历史。闸门 V5 待本地勾选。

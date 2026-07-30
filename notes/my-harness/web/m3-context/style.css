@@ -1,0 +1,272 @@
+/**
+ * M3 页局部样式：历史编辑器 + 步骤卡 + JSON 三栏对照
+ */
+
+.hint {
+  margin: 8px 0 12px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.hint code {
+  font-size: 0.78rem;
+  color: var(--accent);
+}
+
+.panel-head {
+  margin-top: 0;
+  margin-bottom: 8px;
+}
+
+.presets {
+  margin-bottom: 12px;
+}
+
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 12px;
+  align-items: flex-end;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+  color: var(--muted);
+  min-width: 140px;
+  flex: 1;
+}
+
+.field input,
+.field select {
+  width: 100%;
+  min-width: 120px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font: inherit;
+}
+
+/* —— 历史列表 —— */
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hist-row {
+  display: grid;
+  grid-template-columns: 110px 1fr auto;
+  gap: 8px;
+  align-items: start;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.hist-row.has-tools {
+  border-color: var(--warn);
+}
+
+.hist-row.is-tool {
+  border-color: var(--accent);
+}
+
+.hist-row select {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  font: inherit;
+}
+
+.hist-main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.hist-badge {
+  font-size: 0.72rem;
+  color: var(--muted);
+  font-family: var(--mono);
+}
+
+.hist-badge.warn {
+  color: var(--warn);
+}
+
+.hist-ids {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.hist-ids input {
+  flex: 1;
+  min-width: 120px;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+.hist-main textarea {
+  min-height: 52px;
+  margin: 0;
+}
+
+.hist-main textarea.is-empty-ok {
+  border-style: dashed;
+  color: var(--muted);
+}
+
+.hist-sublabel {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.hist-toolcalls {
+  min-height: 88px !important;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  border-color: var(--warn);
+}
+
+.hist-toolcalls.is-bad {
+  border-color: var(--err);
+}
+
+.hist-row .rm {
+  padding: 6px 10px;
+}
+
+/* —— 步骤卡 —— */
+.steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 420px;
+  overflow: auto;
+  min-height: 4em;
+}
+
+.step-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  background: var(--bg);
+  cursor: pointer;
+  text-align: left;
+}
+
+.step-card:hover {
+  border-color: var(--accent);
+}
+
+.step-card.is-active {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.step-card.is-trim {
+  border-color: var(--warn);
+}
+
+.step-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.step-title {
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.step-summary {
+  font-size: 0.8rem;
+  color: var(--text);
+  font-family: var(--mono);
+  white-space: pre-wrap;
+}
+
+.step-note {
+  margin-top: 6px;
+  font-size: 0.75rem;
+  color: var(--warn);
+}
+
+/* —— JSON 对照 —— */
+.json-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.json-full {
+  grid-column: 1 / -1;
+}
+
+.preview-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.json-box {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  white-space: pre-wrap;
+  max-height: 260px;
+  overflow: auto;
+  color: var(--text);
+}
+
+.json-box.accent {
+  border-color: var(--accent);
+  max-height: 360px;
+}
+
+.ctx-stats {
+  margin-top: 12px;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+#stream.stream {
+  min-height: 3em;
+  max-height: 200px;
+  overflow: auto;
+}
+
+.pill.trim {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+@media (max-width: 720px) {
+  .hist-row {
+    grid-template-columns: 1fr;
+  }
+  .json-grid {
+    grid-template-columns: 1fr;
+  }
+}

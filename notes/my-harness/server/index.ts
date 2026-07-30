@@ -13,13 +13,21 @@
 import http from "node:http";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
-import { createOpenAIAdapter, openaiToolsSchemaForTrace } from "../src/adapters/openai.ts";
+import {
+  buildOpenAIRequestInspect,
+  createOpenAIAdapter,
+  openaiToolsSchemaForTrace,
+} from "../src/adapters/openai.ts";
+import {
+  buildSeedHistory,
+  createAssembleContext,
+} from "../src/kernel/context.ts";
 import { runAgent } from "../src/kernel/loop.ts";
 import { MOCK_TOOLS, executeMockTool } from "../src/kernel/tools.ts";
 import { executeToolWithValidation } from "../src/kernel/validate.ts";
 import { loadEnv, packageRootFrom } from "../src/load-env.ts";
 import { TraceRecorder } from "../src/trace.ts";
-import type { RunEvent, ToolCall } from "../src/types.ts";
+import type { RunEvent, ToolCall, UnifiedMessage } from "../src/types.ts";
 
 const ROOT = packageRootFrom(import.meta.url);
 loadEnv(ROOT);
@@ -40,7 +48,7 @@ const MIME: Record<string, string> = {
   ".md": "text/markdown; charset=utf-8",
 };
 
-/** 请求体：M2 起可调运行时约束；localGuard 用于不经模型的确定性校验演示 */
+/** 请求体：M2 约束 + M3 Context 策略；localGuard 用于不经模型的确定性校验演示 */
 type RunBody = {
   prompt?: string;
   systemPrompt?: string;
@@ -53,6 +61,23 @@ type RunBody = {
    * - bad_args：伪造不合 schema 的参数
    */
   localGuard?: "unknown_tool" | "bad_args";
+  /** M3：Context 裁剪策略 */
+  contextStrategy?: "identity" | "recent_n" | "char_budget";
+  /** recent_n：保留最近几条非 system（默认 6） */
+  recentN?: number;
+  /** char_budget：发给模型的粗略字符上限（默认 2000） */
+  maxChars?: number;
+  /**
+   * M3/V5：在当前问题前灌入多少轮「user+assistant」填充历史。
+   * 仅占位文本，不含密钥与工具实现。
+   * 若同时传了 history，则以 history 为准（忽略 seedPairs）。
+   */
+  seedPairs?: number;
+  /**
+   * M3：页面构造的历史消息（不含 system / 当前 prompt）。
+   * 服务端会做角色与字段白名单清洗。
+   */
+  history?: unknown[];
 };
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
@@ -107,6 +132,41 @@ function serveStatic(urlPath: string, res: http.ServerResponse): boolean {
 /** 带 schema 校验的执行入口（未知工具 / 非法参数在此拦截） */
 function executeGuarded(call: ToolCall) {
   return executeToolWithValidation(call, MOCK_TOOLS, executeMockTool);
+}
+
+/**
+ * 清洗前端构造的历史：只保留统一消息白名单字段，拒绝 system（system 由服务端固定）。
+ * 避免把任意 JSON / 敏感字段直接灌进 Context。
+ */
+function sanitizeHistory(raw: unknown[]): UnifiedMessage[] {
+  const allowed = new Set(["user", "assistant", "tool"]);
+  const out: UnifiedMessage[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const m = item as Record<string, unknown>;
+    const role = String(m.role ?? "");
+    if (!allowed.has(role)) continue;
+    const msg: UnifiedMessage = {
+      role: role as UnifiedMessage["role"],
+      content: typeof m.content === "string" ? m.content : m.content === null ? null : String(m.content ?? ""),
+    };
+    if (typeof m.name === "string") msg.name = m.name;
+    if (typeof m.toolCallId === "string") msg.toolCallId = m.toolCallId;
+    if (Array.isArray(m.toolCalls)) {
+      msg.toolCalls = m.toolCalls
+        .filter((c): c is Record<string, unknown> => !!c && typeof c === "object")
+        .map((c, i) => ({
+          id: typeof c.id === "string" ? c.id : `hist_${i}`,
+          name: typeof c.name === "string" ? c.name : "unknown",
+          arguments:
+            c.arguments && typeof c.arguments === "object" && !Array.isArray(c.arguments)
+              ? (c.arguments as Record<string, unknown>)
+              : {},
+        }));
+    }
+    out.push(msg);
+  }
+  return out.slice(0, 80); // 防止一次灌爆
 }
 
 /**
@@ -295,6 +355,13 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     const timeoutMs =
       typeof body.timeoutMs === "number" && body.timeoutMs > 0 ? body.timeoutMs : undefined;
     const stopOnToolError = Boolean(body.stopOnToolError);
+    const contextStrategy = body.contextStrategy ?? "identity";
+    const recentN =
+      typeof body.recentN === "number" && body.recentN >= 0 ? body.recentN : 6;
+    const maxChars =
+      typeof body.maxChars === "number" && body.maxChars > 0 ? body.maxChars : 2000;
+    const seedPairs =
+      typeof body.seedPairs === "number" && body.seedPairs > 0 ? body.seedPairs : 0;
 
     // 先写 SSE 头，再边跑边推事件
     res.writeHead(200, {
@@ -329,7 +396,25 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     const systemPrompt =
       typeof body.systemPrompt === "string" && body.systemPrompt.trim()
         ? body.systemPrompt.trim()
-        : undefined;
+        : "你是助手。需要天气或加法时必须调用工具，不要编造工具结果。";
+
+    // M3：历史来源优先页面构造的 history；否则 seedPairs 填充
+    const historyFromClient = Array.isArray(body.history)
+      ? sanitizeHistory(body.history)
+      : null;
+    const historyMessages =
+      historyFromClient ?? buildSeedHistory(seedPairs);
+
+    const initialMessages: UnifiedMessage[] = [
+      { role: "system", content: systemPrompt },
+      ...historyMessages,
+      { role: "user", content: prompt },
+    ];
+    const assembleContext = createAssembleContext({
+      strategy: contextStrategy,
+      recentN,
+      maxChars,
+    });
 
     // 浏览器断开连接 → abort → loop / fetch 停止
     const ac = new AbortController();
@@ -348,6 +433,18 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     });
 
     const onEvent = (event: RunEvent) => {
+      // M3：在推送/落盘前补上「真实出站 JSON」（不含 Authorization）
+      if (event.type === "llm_request" && event.payload && typeof event.payload === "object") {
+        const p = event.payload as Record<string, unknown>;
+        const after = p.messagesAfter;
+        if (Array.isArray(after)) {
+          p.openaiRequest = buildOpenAIRequestInspect({
+            model: MODEL,
+            messages: after as UnifiedMessage[],
+            tools: MOCK_TOOLS,
+          });
+        }
+      }
       // text_delta 只推前端，不写入 Trace；stream_detail 等其余事件落盘
       if (event.type !== "text_delta") {
         trace.addFromEvent(event);
@@ -361,24 +458,35 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       maxSteps,
       timeoutMs: timeoutMs ?? null,
       stopOnToolError,
+      contextStrategy,
+      recentN,
+      maxChars,
+      seedPairs: historyFromClient ? 0 : seedPairs,
+      historySource: historyFromClient ? "client" : seedPairs > 0 ? "seed" : "none",
+      historyCount: historyMessages.length,
+      initialMessageCount: initialMessages.length,
     });
 
     try {
       const result = await runAgent({
         prompt,
-        systemPrompt,
+        messages: initialMessages,
         tools: MOCK_TOOLS,
         executeTool: executeGuarded,
         adapter,
         maxSteps,
         timeoutMs,
         stopOnToolError,
+        assembleContext,
         signal: ac.signal,
         onEvent,
       });
       trace.finish({
         finalAnswer: result.finalText,
         stopReason: result.stopReason,
+        contextStrategy,
+        historySource: historyFromClient ? "client" : seedPairs > 0 ? "seed" : "none",
+        historyCount: historyMessages.length,
       });
       const path = trace.write(join(ROOT, "traces"), "openai");
       // done：前端据此结束 UI 状态并加载 Trace

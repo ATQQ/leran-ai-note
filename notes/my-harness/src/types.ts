@@ -172,8 +172,25 @@ export type RunOptions = {
   signal?: AbortSignal;
   onEvent?: (event: RunEvent) => void;
   /**
-   * Context 组装钩子（M3 主战场）。
-   * 默认 identity；可在此做截断 / 摘要，再交给 Adapter。
+   * Context 组装钩子（M3）。
+   * 发往模型前必须经过此钩子；可返回裁剪后的 messages + 审计 meta。
+   * 未传时等同 identity（不裁剪）。
    */
-  assembleContext?: (messages: UnifiedMessage[]) => UnifiedMessage[];
+  assembleContext?: (
+    messages: UnifiedMessage[],
+  ) =>
+    | UnifiedMessage[]
+    | {
+        messages: UnifiedMessage[];
+        meta?: {
+          strategy?: string;
+          beforeCount?: number;
+          afterCount?: number;
+          beforeChars?: number;
+          afterChars?: number;
+          droppedCount?: number;
+          params?: Record<string, unknown>;
+          note?: string;
+        };
+      };
 };

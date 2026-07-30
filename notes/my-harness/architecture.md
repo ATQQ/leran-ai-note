@@ -69,6 +69,9 @@ notes/my-harness/
       timeline.js · trace-view.js
     m2-guards/
       index.html · style.css · main.js
+    m3-context/
+      index.html · style.css · main.js
+      history.js · steps.js
   traces/
 ```
 
@@ -99,3 +102,14 @@ notes/my-harness/
 | schema 校验 | `kernel/validate.ts` | 未知工具 / 类型 / required → 错误 `ToolResult` |
 | `stopOnToolError` | `loop` | true 时工具一错即停 → `tool_error` |
 | 本地守卫演示 | `POST /api/run` + `localGuard` | 不经模型，确定性测 V3 |
+
+## M3 Context 策略
+
+| 能力 | 位置 | 说明 |
+|------|------|------|
+| `assembleContext` | `kernel/context.ts` → `loop` 发模型前 | 裁剪的是视图；内存完整轨迹保留 |
+| `identity` / `recent_n` / `char_budget` | 同上 | 无 tokenizer；字符数为粗估 |
+| tool 孤儿回补 | `repairToolOrphans` | 避免裁断 `tool` 与 `assistant.toolCalls` 配对 |
+| Trace | `llm_request.payload.context` | before/after 条数与字符、preview 摘要 |
+| 出站 JSON | `llm_request.payload.openaiRequest` | 真实 Chat Completions body（无 Key） |
+| 页面历史 | `history[]` 优先于 `seedPairs` | m3 页可编辑构造 Context |

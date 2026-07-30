@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>M3 · Context 策略</title>
+    <link rel="stylesheet" href="../shared/shared.css" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main>
+      <p><a href="../index/index.html">← 索引</a></p>
+      <h1>M3 · Context 策略</h1>
+      <p class="sub">
+        先在页面构造历史 → 看 <code>assembleContext</code> 裁剪前后 → 再看真正发给模型的 OpenAI JSON。
+        步骤拆解与 M1 同构，焦点在 Context。
+      </p>
+
+      <!-- ① 历史构造 -->
+      <div class="card">
+        <div class="row panel-head">
+          <strong>① 构造历史 Context</strong>
+          <span class="pill">不含 system / 当前问题</span>
+        </div>
+        <p class="hint">
+          每条可改角色与正文。预设一键填充；也可手动加减。运行时拼成：
+          <code>system + 历史 + 当前 user</code>。
+          「含工具回合」里部分 assistant 的正文为空是正常的（仅 toolCalls，content=null）。
+        </p>
+        <div class="row presets">
+          <button type="button" class="secondary" data-preset="short3">短对话 ×3</button>
+          <button type="button" class="secondary" data-preset="long6">长填充 ×6</button>
+          <button type="button" class="secondary" data-preset="tools">含工具回合</button>
+          <button type="button" class="secondary" data-preset="clear">清空</button>
+          <button type="button" class="secondary" id="addUser">+ user</button>
+          <button type="button" class="secondary" id="addAssistant">+ assistant</button>
+        </div>
+        <div id="historyList" class="history-list"></div>
+        <p class="hint" id="historyCount">共 0 条历史</p>
+      </div>
+
+      <!-- ② 策略 + 当前问题 -->
+      <div class="card">
+        <div class="row panel-head">
+          <strong>② 裁剪策略与当前问题</strong>
+        </div>
+        <div class="controls">
+          <label class="field">
+            策略
+            <select id="strategy">
+              <option value="identity">identity（不裁剪）</option>
+              <option value="recent_n" selected>recent_n（最近 N 条）</option>
+              <option value="char_budget">char_budget（字符预算）</option>
+            </select>
+          </label>
+          <label class="field">
+            recentN
+            <input id="recentN" type="number" min="0" max="40" value="4" />
+          </label>
+          <label class="field">
+            maxChars
+            <input id="maxChars" type="number" min="200" step="100" value="1200" />
+          </label>
+          <label class="field">
+            system（只读演示可改）
+            <input id="systemPrompt" type="text" value="你是助手。需要天气或加法时必须调用工具，不要编造工具结果。" />
+          </label>
+        </div>
+
+        <label for="prompt">当前用户请求（会追加到历史末尾）</label>
+        <textarea id="prompt">用一句话总结上面在聊什么。若需要可查深圳天气。</textarea>
+
+        <div class="row">
+          <button id="run">运行（看裁剪 + 出站 JSON）</button>
+          <button id="stop" class="secondary" disabled>取消</button>
+          <button id="reloadTrace" class="secondary">加载最新 Trace</button>
+          <span id="status" class="pill">idle</span>
+        </div>
+      </div>
+
+      <!-- ③ 步骤拆解 -->
+      <div class="card">
+        <div class="row panel-head">
+          <strong>③ 步骤拆解</strong>
+          <span class="pill">init → assemble → OpenAI JSON → 响应</span>
+        </div>
+        <div id="steps" class="steps"></div>
+      </div>
+
+      <!-- ④ 本轮 JSON 对照（随步骤更新，也可点步骤切换） -->
+      <div class="card">
+        <div class="row panel-head">
+          <strong>④ JSON 对照</strong>
+          <span id="jsonRound" class="pill">选中某次 llm_request</span>
+        </div>
+        <div class="json-grid">
+          <div>
+            <div class="preview-label">裁剪前 · UnifiedMessage[]（内存完整轨迹）</div>
+            <pre id="jsonBefore" class="json-box">—</pre>
+          </div>
+          <div>
+            <div class="preview-label">裁剪后 · UnifiedMessage[]（交给 Adapter）</div>
+            <pre id="jsonAfter" class="json-box">—</pre>
+          </div>
+          <div class="json-full">
+            <div class="preview-label">
+              实际出站 · OpenAI Chat Completions body（无 Authorization）
+            </div>
+            <pre id="jsonOpenAI" class="json-box accent">—</pre>
+          </div>
+        </div>
+        <div id="ctxStats" class="ctx-stats">尚未选择 llm_request 步骤</div>
+      </div>
+
+      <div class="card">
+        <div class="row panel-head">
+          <strong>流式文本</strong>
+        </div>
+        <div id="stream" class="stream"></div>
+      </div>
+
+      <div class="card">
+        <strong>事件流（简要）</strong>
+        <div id="events" class="events"></div>
+      </div>
+    </main>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
