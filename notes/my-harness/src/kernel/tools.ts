@@ -1,9 +1,10 @@
 /**
- * 本地 mock 工具注册表（M1）
+ * 本地 mock 工具注册表（M1+）
  *
  * - MOCK_TOOLS：发给模型的 schema（声明）
  * - impl：真正执行的函数（实现）；实现代码永不进入模型 Context
  * - executeMockTool：把 ToolCall 路由到实现，统一返回 ToolResult
+ * - 执行前 schema 校验见 validate.ts（Server 走 executeToolWithValidation）
  *
  * M5 起会增加 MCP 后端；本文件保持「本地假数据」演示用。
  */
@@ -55,9 +56,9 @@ const impl: Record<string, (args: Record<string, unknown>) => Promise<unknown>> 
 };
 
 /**
- * 执行一次工具调用。
- * 未知工具 / 抛错：仍返回 ToolResult（isError=true），由 loop 写回 Context，
- * 让模型有机会看到错误（M2 会加强 schema 校验与策略）。
+ * 执行一次工具调用（假定调用方已做过 schema 校验）。
+ * 未知工具 / 抛错：仍返回 ToolResult（isError=true），由 loop 写回 Context。
+ * 正常路径请用 validate.executeToolWithValidation，避免绕过校验。
  */
 export async function executeMockTool(call: ToolCall): Promise<ToolResult> {
   const fn = impl[call.name];
@@ -65,7 +66,10 @@ export async function executeMockTool(call: ToolCall): Promise<ToolResult> {
     return {
       toolCallId: call.id,
       name: call.name,
-      content: JSON.stringify({ error: `unknown tool: ${call.name}` }),
+      content: JSON.stringify({
+        error: "unknown_tool",
+        message: `未知工具名：${call.name}`,
+      }),
       isError: true,
     };
   }
@@ -80,7 +84,7 @@ export async function executeMockTool(call: ToolCall): Promise<ToolResult> {
     return {
       toolCallId: call.id,
       name: call.name,
-      content: JSON.stringify({ error: String(err) }),
+      content: JSON.stringify({ error: "tool_threw", message: String(err) }),
       isError: true,
     };
   }

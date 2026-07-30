@@ -6,6 +6,7 @@
  * 2. POST /api/run：调用 kernel，以 SSE 推送 RunEvent
  * 3. 读取 .env 中的模型密钥（绝不下发到浏览器）
  * 4. 将脱敏后的 Trace 写入 traces/
+ * 5. M2：透传 maxSteps / timeoutMs / stopOnToolError；本地校验演示；取消时仍落盘 Trace
  *
  * 启动：npm run demo → http://127.0.0.1:8787/web/index/index.html
  */
@@ -15,9 +16,10 @@ import { extname, join, resolve } from "node:path";
 import { createOpenAIAdapter, openaiToolsSchemaForTrace } from "../src/adapters/openai.ts";
 import { runAgent } from "../src/kernel/loop.ts";
 import { MOCK_TOOLS, executeMockTool } from "../src/kernel/tools.ts";
+import { executeToolWithValidation } from "../src/kernel/validate.ts";
 import { loadEnv, packageRootFrom } from "../src/load-env.ts";
 import { TraceRecorder } from "../src/trace.ts";
-import type { RunEvent } from "../src/types.ts";
+import type { RunEvent, ToolCall } from "../src/types.ts";
 
 const ROOT = packageRootFrom(import.meta.url);
 loadEnv(ROOT);
@@ -36,6 +38,21 @@ const MIME: Record<string, string> = {
   ".js": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".md": "text/markdown; charset=utf-8",
+};
+
+/** 请求体：M2 起可调运行时约束；localGuard 用于不经模型的确定性校验演示 */
+type RunBody = {
+  prompt?: string;
+  systemPrompt?: string;
+  maxSteps?: number;
+  timeoutMs?: number;
+  stopOnToolError?: boolean;
+  /**
+   * 本地守卫演示（不调模型，专测 V3）：
+   * - unknown_tool：伪造未知工具名
+   * - bad_args：伪造不合 schema 的参数
+   */
+  localGuard?: "unknown_tool" | "bad_args";
 };
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
@@ -85,6 +102,131 @@ function serveStatic(urlPath: string, res: http.ServerResponse): boolean {
   res.writeHead(200, { "Content-Type": mime });
   res.end(readFileSync(filePath));
   return true;
+}
+
+/** 带 schema 校验的执行入口（未知工具 / 非法参数在此拦截） */
+function executeGuarded(call: ToolCall) {
+  return executeToolWithValidation(call, MOCK_TOOLS, executeMockTool);
+}
+
+/**
+ * 不经模型的本地校验演示：发与真实 run 同构的 SSE 事件，便于 m2 页对照 V3。
+ */
+async function runLocalGuardDemo(
+  res: http.ServerResponse,
+  kind: "unknown_tool" | "bad_args",
+  stopOnToolError: boolean,
+): Promise<void> {
+  const trace = new TraceRecorder({
+    provider: "openai",
+    model: MODEL,
+    baseUrl: BASE,
+    toolsSchema: openaiToolsSchemaForTrace(MOCK_TOOLS),
+  });
+
+  const onEvent = (event: RunEvent) => {
+    if (event.type !== "text_delta") trace.addFromEvent(event);
+    writeSse(res, event.type, event);
+  };
+
+  const call: ToolCall =
+    kind === "unknown_tool"
+      ? { id: "demo_unknown", name: "fly_to_moon", arguments: { speed: 1 } }
+      : { id: "demo_bad_args", name: "add", arguments: { a: "十二", b: true } };
+
+  writeSse(res, "meta", {
+    model: MODEL,
+    adapter: "local-guard",
+    localGuard: kind,
+  });
+
+  onEvent({
+    type: "run_start",
+    phase: "init",
+    title: "本地守卫演示",
+    summary: `不经模型，直接校验伪造 ToolCall（${kind}）`,
+    actor: "harness",
+    direction: "local",
+    payload: { localGuard: kind, call, stopOnToolError },
+    at: new Date().toISOString(),
+  });
+
+  onEvent({
+    type: "assistant_message",
+    phase: "model_response",
+    title: "伪造 · 模型响应",
+    summary: "注入 1 个待校验的工具调用",
+    actor: "model",
+    direction: "in",
+    payload: { content: null, toolCalls: [call], reasoning: null },
+    note: "仅用于 V3 确定性演示，非真实模型输出",
+    at: new Date().toISOString(),
+  });
+
+  onEvent({
+    type: "tool_start",
+    phase: "execute_tool",
+    title: `执行工具 · ${call.name}`,
+    summary: `id=${call.id}`,
+    actor: "tool",
+    direction: "local",
+    payload: { toolCallId: call.id, name: call.name, arguments: call.arguments },
+    at: new Date().toISOString(),
+  });
+
+  const result = await executeGuarded(call);
+  const toolMessage = {
+    role: "tool" as const,
+    content: result.content,
+    toolCallId: result.toolCallId,
+    name: result.name,
+  };
+
+  onEvent({
+    type: "tool_end",
+    phase: "append_tool_result",
+    title: `回写工具结果 · ${call.name}`,
+    summary: result.isError ? "工具返回错误（已回写）" : "结果已写入 Context",
+    actor: "harness",
+    direction: "local",
+    payload: { appended: toolMessage, isError: result.isError ?? false },
+    note: result.isError ? "校验失败或执行失败；不静默吞掉" : null,
+    at: new Date().toISOString(),
+  });
+
+  const stopReason =
+    result.isError && stopOnToolError ? "tool_error" : result.isError ? "completed" : "completed";
+
+  onEvent({
+    type: "run_end",
+    phase: "final_answer",
+    title: "运行结束",
+    summary: `stopReason=${stopReason}`,
+    actor: "harness",
+    direction: "local",
+    payload: {
+      finalText: null,
+      stopReason,
+      steps: 0,
+      localGuard: kind,
+      validationError: result.isError,
+    },
+    at: new Date().toISOString(),
+  });
+
+  trace.finish({
+    finalAnswer: null,
+    stopReason,
+    localGuard: kind,
+  });
+  const path = trace.write(join(ROOT, "traces"), "openai");
+  writeSse(res, "done", {
+    finalText: null,
+    stopReason,
+    tracePath: path,
+    localGuard: kind,
+    toolResult: result,
+  });
 }
 
 // 外层包一层 catch：单次请求异常不应打崩整个进程
@@ -137,34 +279,22 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     return;
   }
 
-  // 主入口：流式跑一轮 Agent
+  // 主入口：流式跑一轮 Agent（或本地守卫演示）
   if (req.method === "POST" && pathname === "/api/run") {
-    if (!KEY || KEY.includes("xxx")) {
-      sendJson(res, 500, {
-        error: "缺少 OPENAI_API_KEY。请复制 .env.example 为 .env 并填写。",
-      });
-      return;
-    }
-
-    // 默认固定演示 prompt（与 PLAN 回归用例一致）
-    let prompt =
-      "帮我查一下深圳的天气，再用工具算一下 12 加 30，最后用中文简短总结。";
-    let maxSteps = 8;
+    let body: RunBody = {};
     try {
       const raw = await readBody(req);
-      if (raw) {
-        const parsed = JSON.parse(raw) as { prompt?: string; maxSteps?: number };
-        if (typeof parsed.prompt === "string" && parsed.prompt.trim()) {
-          prompt = parsed.prompt.trim();
-        }
-        if (typeof parsed.maxSteps === "number" && parsed.maxSteps > 0) {
-          maxSteps = parsed.maxSteps;
-        }
-      }
+      if (raw) body = JSON.parse(raw) as RunBody;
     } catch {
       sendJson(res, 400, { error: "invalid JSON body" });
       return;
     }
+
+    const maxSteps =
+      typeof body.maxSteps === "number" && body.maxSteps > 0 ? body.maxSteps : 8;
+    const timeoutMs =
+      typeof body.timeoutMs === "number" && body.timeoutMs > 0 ? body.timeoutMs : undefined;
+    const stopOnToolError = Boolean(body.stopOnToolError);
 
     // 先写 SSE 头，再边跑边推事件
     res.writeHead(200, {
@@ -173,6 +303,33 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       Connection: "keep-alive",
       "Access-Control-Allow-Origin": "*",
     });
+
+    // 本地守卫：不需要 API Key，确定性产出错误 ToolResult（V3）
+    if (body.localGuard === "unknown_tool" || body.localGuard === "bad_args") {
+      await runLocalGuardDemo(res, body.localGuard, stopOnToolError);
+      res.end();
+      return;
+    }
+
+    if (!KEY || KEY.includes("xxx")) {
+      writeSse(res, "done", {
+        error: "缺少 OPENAI_API_KEY。请复制 .env.example 为 .env 并填写。",
+        stopReason: "error",
+      });
+      res.end();
+      return;
+    }
+
+    // 默认固定演示 prompt（与 PLAN 回归用例一致）
+    let prompt =
+      "帮我查一下深圳的天气，再用工具算一下 12 加 30，最后用中文简短总结。";
+    if (typeof body.prompt === "string" && body.prompt.trim()) {
+      prompt = body.prompt.trim();
+    }
+    const systemPrompt =
+      typeof body.systemPrompt === "string" && body.systemPrompt.trim()
+        ? body.systemPrompt.trim()
+        : undefined;
 
     // 浏览器断开连接 → abort → loop / fetch 停止
     const ac = new AbortController();
@@ -198,15 +355,24 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       writeSse(res, event.type, event);
     };
 
-    writeSse(res, "meta", { model: MODEL, adapter: "openai" });
+    writeSse(res, "meta", {
+      model: MODEL,
+      adapter: "openai",
+      maxSteps,
+      timeoutMs: timeoutMs ?? null,
+      stopOnToolError,
+    });
 
     try {
       const result = await runAgent({
         prompt,
+        systemPrompt,
         tools: MOCK_TOOLS,
-        executeTool: executeMockTool,
+        executeTool: executeGuarded,
         adapter,
         maxSteps,
+        timeoutMs,
+        stopOnToolError,
         signal: ac.signal,
         onEvent,
       });
@@ -224,7 +390,27 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const name = err instanceof Error ? err.name : "";
-      if (name !== "AbortError") {
+      // 取消 / 超时：仍落盘 Trace，便于 V4b 审计终止原因
+      if (name === "AbortError" || ac.signal.aborted) {
+        const stopReason = "aborted";
+        onEvent({
+          type: "run_end",
+          phase: "final_answer",
+          title: "运行结束",
+          summary: `stopReason=${stopReason}`,
+          actor: "harness",
+          direction: "local",
+          payload: { finalText: null, stopReason },
+          at: new Date().toISOString(),
+        });
+        trace.finish({ finalAnswer: null, stopReason });
+        try {
+          const path = trace.write(join(ROOT, "traces"), "openai");
+          writeSse(res, "done", { stopReason, tracePath: path });
+        } catch {
+          writeSse(res, "done", { stopReason });
+        }
+      } else {
         onEvent({
           type: "error",
           phase: "error",
@@ -235,15 +421,13 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
           payload: { error: message },
           at: new Date().toISOString(),
         });
-        trace.finish({ error: message });
+        trace.finish({ error: message, stopReason: "error" });
         try {
           trace.write(join(ROOT, "traces"), "openai");
         } catch {
           /* 写盘失败不影响响应结束 */
         }
         writeSse(res, "done", { error: message, stopReason: "error" });
-      } else {
-        writeSse(res, "done", { stopReason: "aborted" });
       }
     }
 

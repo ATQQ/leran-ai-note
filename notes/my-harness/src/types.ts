@@ -158,6 +158,16 @@ export type RunOptions = {
   adapter: LlmAdapter;
   /** 防止死循环；M1 默认 8，M2 起可由页面配置 */
   maxSteps?: number;
+  /**
+   * 整次 run 墙钟超时（毫秒）。到期后 abort，stopReason=timeout。
+   * 与外部 signal 合并：任一触发即停。
+   */
+  timeoutMs?: number;
+  /**
+   * 任一工具返回 isError 时是否立刻终止整次 run。
+   * false（默认）：错误写回 Context，让模型有机会纠正；true：stopReason=tool_error。
+   */
+  stopOnToolError?: boolean;
   /** 前端取消 → Server abort → 传到此处 */
   signal?: AbortSignal;
   onEvent?: (event: RunEvent) => void;

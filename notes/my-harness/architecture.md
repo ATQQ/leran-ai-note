@@ -67,7 +67,8 @@ notes/my-harness/
     m1-openai-loop/
       index.html · style.css · main.js
       timeline.js · trace-view.js
-    m2-guards/ …（后续）
+    m2-guards/
+      index.html · style.css · main.js
   traces/
 ```
 
@@ -87,3 +88,14 @@ notes/my-harness/
 - 内核只使用 `UnifiedMessage` / `ToolDef` / `ToolCall` / `ToolResult` / `RunEvent`。
 - OpenAI 的 `tool_calls`、`role: "tool"` 仅出现在 Adapter。
 - `ToolCall.arguments` 始终为已解析对象。
+
+## M2 运行时约束
+
+| 能力 | 位置 | 说明 |
+|------|------|------|
+| `maxSteps` | `loop` + 请求体 | 超限 → `stopReason=max_steps` |
+| `timeoutMs` | `loop` 合并 AbortSignal | 到期 → `stopReason=timeout` |
+| 前端取消 | `fetch` abort → `req.close` → signal | → `stopReason=aborted`；Trace 仍落盘 |
+| schema 校验 | `kernel/validate.ts` | 未知工具 / 类型 / required → 错误 `ToolResult` |
+| `stopOnToolError` | `loop` | true 时工具一错即停 → `tool_error` |
+| 本地守卫演示 | `POST /api/run` + `localGuard` | 不经模型，确定性测 V3 |

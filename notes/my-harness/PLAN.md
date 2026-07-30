@@ -97,6 +97,8 @@
 | 2.3 | 工具失败回写；是否中止整次 run 可配置 | 循环按策略继续或停止 |
 | 2.4 | `web/m2-guards/`（`index.html` + `style.css` + `main.js`）：可调 maxSteps、触发非法工具等场景 | 页面能展示错误与终止事件 |
 
+> 实现备注：`localGuard=unknown_tool|bad_args` 可在不调模型时确定性验证 V3。
+
 ### 验证闸门（对应 V3、V4）
 
 | ID | 操作 | 期望 |
@@ -237,4 +239,5 @@
 |------|------|
 | M0 | 完成（`architecture.md`） |
 | M1 | 完成（V1/V2 已本地跑通） |
-| M2 | **下一步**：maxSteps / schema 校验 / Abort + `web/m2-guards/` |
+| M2 | **实现完成**：校验 / maxSteps / abort / timeout + `web/m2-guards/`；待本地勾选 V3/V4 |
+| M3 | 下一步（闸门通过后） |

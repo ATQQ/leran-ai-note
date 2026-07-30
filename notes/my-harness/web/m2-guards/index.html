@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>M2 · 运行时约束</title>
+    <link rel="stylesheet" href="../shared/shared.css" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main>
+      <p><a href="../index/index.html">← 索引</a></p>
+      <h1>M2 · 运行时约束</h1>
+      <p class="sub">
+        演示 maxSteps / schema 校验 / 取消与超时。错误必须回写为明确 ToolResult，禁止静默吞掉。
+      </p>
+
+      <div class="card">
+        <strong>场景快捷键</strong>
+        <div class="row scenarios" id="scenarios">
+          <button type="button" data-scenario="normal">正常多工具</button>
+          <button type="button" data-scenario="max_steps" class="secondary">
+            maxSteps=1
+          </button>
+          <button type="button" data-scenario="unknown_tool" class="secondary">
+            未知工具（本地）
+          </button>
+          <button type="button" data-scenario="bad_args" class="secondary">
+            非法参数（本地）
+          </button>
+          <button type="button" data-scenario="induce_bad" class="secondary">
+            诱导非法参数（经模型）
+          </button>
+        </div>
+        <p class="hint">
+          「本地」不调模型，确定性产出校验错误（V3）。「经模型」依赖模型是否真的乱传参。
+        </p>
+      </div>
+
+      <div class="card">
+        <label for="prompt">用户请求</label>
+        <textarea id="prompt">
+帮我查一下深圳的天气，再用工具算一下 12 加 30，最后用中文简短总结。</textarea>
+
+        <div class="controls">
+          <label class="field">
+            maxSteps
+            <input id="maxSteps" type="number" min="1" max="20" value="8" />
+          </label>
+          <label class="field">
+            timeoutMs（空=不限）
+            <input id="timeoutMs" type="number" min="0" step="1000" placeholder="例如 15000" />
+          </label>
+          <label class="check">
+            <input id="stopOnToolError" type="checkbox" />
+            stopOnToolError（工具一错就停）
+          </label>
+        </div>
+
+        <div class="row">
+          <button id="run">运行</button>
+          <button id="stop" class="secondary" disabled>取消</button>
+          <button id="reloadTrace" class="secondary">加载最新 Trace</button>
+          <span id="status" class="pill">idle</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row panel-head">
+          <strong>终止原因</strong>
+          <span id="stopReason" class="pill">—</span>
+        </div>
+        <p class="hint">
+          期望：max_steps / aborted / timeout / tool_error / completed；Trace meta 同步记录。
+        </p>
+      </div>
+
+      <div class="card">
+        <strong>流式文本</strong>
+        <div id="stream" class="stream"></div>
+      </div>
+
+      <div class="card">
+        <strong>事件流（含校验错误）</strong>
+        <div id="events" class="events"></div>
+      </div>
+
+      <div class="card">
+        <strong>最近一次错误 ToolResult</strong>
+        <pre id="lastError" class="error-box">（尚无）</pre>
+      </div>
+
+      <div class="card">
+        <div class="row panel-head">
+          <strong>Trace 摘要</strong>
+          <span id="traceMeta" class="pill">未加载</span>
+        </div>
+        <pre id="trace" class="trace">尚未加载</pre>
+      </div>
+    </main>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>
