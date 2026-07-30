@@ -1,6 +1,5 @@
 /**
- * M3 步骤卡：把 RunEvent 渲染成可点击的学习步骤
- * 点击 llm_request 步骤 → 回调展示 JSON 对照
+ * M3 步骤卡 + 裁剪细则 / JSON 对照渲染
  */
 
 /**
@@ -28,7 +27,6 @@ export function createStepsView(root, onSelect) {
   }
 
   function append(eventName, data) {
-    // 过滤掉刷屏的 text_delta / 细碎 stream_detail（需要时再在事件流看）
     if (eventName === "text_delta") return;
     if (eventName === "stream_detail") {
       const kind = data.payload?.kind;
@@ -76,11 +74,9 @@ export function createStepsView(root, onSelect) {
     root.append(card);
     root.scrollTop = root.scrollHeight;
 
-    // llm_request 自动选中，立刻展示 JSON
     if (eventName === "llm_request") select(uid);
   }
 
-  /** 从 Trace steps 重建（加载 Trace 时） */
   function fromTraceSteps(traceSteps) {
     clear();
     for (const s of traceSteps || []) {
@@ -100,11 +96,151 @@ export function createStepsView(root, onSelect) {
   return { clear, append, fromTraceSteps, select };
 }
 
-/** 把选中的 llm_request 填进 JSON 三栏 */
+function renderMsgRows(rows, kind) {
+  const wrap = document.createElement("div");
+  wrap.className = "trim-rows";
+  if (!rows?.length) {
+    const empty = document.createElement("div");
+    empty.className = "hint";
+    empty.textContent = kind === "kept" ? "（无保留）" : "（无丢弃）";
+    wrap.append(empty);
+    return wrap;
+  }
+  for (const r of rows) {
+    const row = document.createElement("div");
+    row.className = `trim-row ${kind}`;
+    row.innerHTML = `
+      <span>#${r.index}</span>
+      <span class="role">${r.role}</span>
+      <span>${r.chars}字</span>
+      <span>${escapeHtml(r.preview)}</span>
+      <span class="reason">${escapeHtml(r.reason || "")}</span>
+    `;
+    wrap.append(row);
+  }
+  return wrap;
+}
+
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** 渲染策略规则 / 执行步骤 / 保留丢弃清单 */
+export function renderTrimDetail(container, ctx) {
+  container.replaceChildren();
+  if (!ctx?.detail) {
+    const p = document.createElement("p");
+    p.className = "hint";
+    p.textContent = ctx
+      ? "本次 Trace 无 detail 字段（可能是旧 Trace）；请重新运行一次。"
+      : "运行并点击 llm_request 后显示细则。";
+    container.append(p);
+    return;
+  }
+
+  const d = ctx.detail;
+
+  const rulesBlock = document.createElement("div");
+  rulesBlock.className = "trim-block";
+  rulesBlock.innerHTML = `<h4>策略规则（${escapeHtml(ctx.strategy)}）</h4>`;
+  const ol = document.createElement("ol");
+  for (const line of d.rules || []) {
+    const li = document.createElement("li");
+    li.textContent = line;
+    ol.append(li);
+  }
+  rulesBlock.append(ol);
+  container.append(rulesBlock);
+
+  const stepsBlock = document.createElement("div");
+  stepsBlock.className = "trim-block";
+  stepsBlock.innerHTML = "<h4>本轮执行步骤</h4>";
+  const sol = document.createElement("ol");
+  for (const line of d.steps || []) {
+    const li = document.createElement("li");
+    li.textContent = line;
+    sol.append(li);
+  }
+  stepsBlock.append(sol);
+  container.append(stepsBlock);
+
+  const keptBlock = document.createElement("div");
+  keptBlock.className = "trim-block";
+  keptBlock.innerHTML = `<h4>保留 ${d.kept?.length ?? 0} 条</h4>`;
+  keptBlock.append(renderMsgRows(d.kept, "kept"));
+  container.append(keptBlock);
+
+  const dropBlock = document.createElement("div");
+  dropBlock.className = "trim-block";
+  dropBlock.innerHTML = `<h4>丢弃 ${d.dropped?.length ?? 0} 条</h4>`;
+  dropBlock.append(renderMsgRows(d.dropped, "dropped"));
+  container.append(dropBlock);
+}
+
+/** 页面上方：随下拉切换的策略说明（不依赖运行） */
+export const STRATEGY_DOCS = {
+  identity: {
+    title: "identity · 不裁剪",
+    rules: [
+      "完整 messages 原样发给 Adapter。",
+      "用来当对照组：同一历史换其它策略，看条数/字符如何变。",
+    ],
+    params: "无额外参数",
+  },
+  recent_n: {
+    title: "recent_n · 最近 N 条",
+    rules: [
+      "前缀连续 system 全部保留。",
+      "其余只留最近 recentN 条（从尾部数）。",
+      "若裁切点落在 tool 上，向前回补 assistant.toolCalls，避免配对断裂。",
+      "内存完整轨迹仍在；这里裁的是「发给模型的视图」。",
+    ],
+    params: (recentN) => `当前 recentN=${recentN} → 非 system 历史最多留 ${recentN} 条`,
+  },
+  char_budget: {
+    title: "char_budget · 字符预算",
+    rules: [
+      "字符=粗估（content + toolCalls JSON 等），不是真实 token。",
+      "system 先占预算；若已 ≥ maxChars，只发 system。",
+      "再从历史尾部向前逐条塞，直到再加会超 maxChars。",
+      "一条都塞不下时强制留最后 1 条（可略超）。",
+      "同样做 tool 孤儿回补；配对正确优先于严格卡预算。",
+    ],
+    params: (maxChars) =>
+      `当前 maxChars=${maxChars} → 发给模型的粗估字符上限（含 system）`,
+  },
+};
+
+export function renderStrategyHelp(el, strategy, { recentN, maxChars }) {
+  const doc = STRATEGY_DOCS[strategy] || STRATEGY_DOCS.identity;
+  const paramText =
+    typeof doc.params === "function"
+      ? doc.params(strategy === "recent_n" ? recentN : maxChars)
+      : doc.params;
+
+  el.replaceChildren();
+  const h = document.createElement("h3");
+  h.textContent = doc.title;
+  const ol = document.createElement("ol");
+  for (const r of doc.rules) {
+    const li = document.createElement("li");
+    li.textContent = r;
+    ol.append(li);
+  }
+  const p = document.createElement("div");
+  p.className = "param-hint";
+  p.textContent = paramText;
+  el.append(h, ol, p);
+}
+
+/** 把选中的 llm_request 填进细则 + JSON 三栏 */
 export function renderJsonCompare(els, step) {
-  const { jsonBefore, jsonAfter, jsonOpenAI, jsonRound, ctxStats } = els;
+  const { jsonBefore, jsonAfter, jsonOpenAI, jsonRound, ctxStats, trimDetail } = els;
   if (!step || step.event !== "llm_request") {
-    // 非请求步骤：尽量展示自身 payload
     jsonRound.textContent = step ? `#${step._uid} ${step.event}` : "—";
     jsonBefore.textContent = "（请点击「llm_request」步骤查看裁剪前后）";
     jsonAfter.textContent = "—";
@@ -112,6 +248,7 @@ export function renderJsonCompare(els, step) {
       ? JSON.stringify(step.payload, null, 2)
       : "—";
     ctxStats.textContent = step?.summary || "尚未选择 llm_request 步骤";
+    if (trimDetail) renderTrimDetail(trimDetail, null);
     return;
   }
 
@@ -130,8 +267,9 @@ export function renderJsonCompare(els, step) {
     `字符(估): ${ctx.beforeChars} → ${ctx.afterChars}`,
     ctx.params ? `参数: ${JSON.stringify(ctx.params)}` : null,
     ctx.note ? `说明: ${ctx.note}` : null,
-    "提示: 右侧/下方 OpenAI JSON 即 Adapter 出站体（无 API Key）",
   ]
     .filter(Boolean)
     .join("\n");
+
+  if (trimDetail) renderTrimDetail(trimDetail, ctx);
 }

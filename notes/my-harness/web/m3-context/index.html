@@ -62,10 +62,12 @@
             <input id="maxChars" type="number" min="200" step="100" value="1200" />
           </label>
           <label class="field">
-            system（只读演示可改）
+            system（可改）
             <input id="systemPrompt" type="text" value="你是助手。需要天气或加法时必须调用工具，不要编造工具结果。" />
           </label>
         </div>
+
+        <div class="strategy-help" id="strategyHelp"></div>
 
         <label for="prompt">当前用户请求（会追加到历史末尾）</label>
         <textarea id="prompt">用一句话总结上面在聊什么。若需要可查深圳天气。</textarea>
@@ -87,11 +89,21 @@
         <div id="steps" class="steps"></div>
       </div>
 
-      <!-- ④ 本轮 JSON 对照（随步骤更新，也可点步骤切换） -->
+      <!-- ④ 裁剪细则 + JSON 对照 -->
       <div class="card">
         <div class="row panel-head">
-          <strong>④ JSON 对照</strong>
+          <strong>④ 本次裁剪细则</strong>
           <span id="jsonRound" class="pill">选中某次 llm_request</span>
+        </div>
+        <div id="ctxStats" class="ctx-stats">尚未选择 llm_request 步骤</div>
+        <div id="trimDetail" class="trim-detail">
+          <p class="hint">运行并点击步骤卡中的 llm_request 后，这里显示规则、执行步骤、保留/丢弃清单。</p>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row panel-head">
+          <strong>⑤ JSON 对照</strong>
         </div>
         <div class="json-grid">
           <div>
@@ -109,7 +121,6 @@
             <pre id="jsonOpenAI" class="json-box accent">—</pre>
           </div>
         </div>
-        <div id="ctxStats" class="ctx-stats">尚未选择 llm_request 步骤</div>
       </div>
 
       <div class="card">

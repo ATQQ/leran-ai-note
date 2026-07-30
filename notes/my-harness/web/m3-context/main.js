@@ -8,13 +8,18 @@
  */
 import { runSse } from "../shared/shared.js";
 import { createHistoryEditor } from "./history.js";
-import { createStepsView, renderJsonCompare } from "./steps.js";
+import {
+  createStepsView,
+  renderJsonCompare,
+  renderStrategyHelp,
+} from "./steps.js";
 
 const promptEl = document.getElementById("prompt");
 const systemEl = document.getElementById("systemPrompt");
 const strategyEl = document.getElementById("strategy");
 const recentNEl = document.getElementById("recentN");
 const maxCharsEl = document.getElementById("maxChars");
+const strategyHelpEl = document.getElementById("strategyHelp");
 const streamEl = document.getElementById("stream");
 const eventsEl = document.getElementById("events");
 const statusEl = document.getElementById("status");
@@ -28,7 +33,20 @@ const jsonEls = {
   jsonOpenAI: document.getElementById("jsonOpenAI"),
   jsonRound: document.getElementById("jsonRound"),
   ctxStats: document.getElementById("ctxStats"),
+  trimDetail: document.getElementById("trimDetail"),
 };
+
+function refreshStrategyHelp() {
+  renderStrategyHelp(strategyHelpEl, strategyEl.value, {
+    recentN: Number(recentNEl.value) || 0,
+    maxChars: Number(maxCharsEl.value) || 2000,
+  });
+}
+
+strategyEl.onchange = refreshStrategyHelp;
+recentNEl.oninput = refreshStrategyHelp;
+maxCharsEl.oninput = refreshStrategyHelp;
+refreshStrategyHelp();
 
 let abortController = null;
 

@@ -191,6 +191,25 @@ export type RunOptions = {
           droppedCount?: number;
           params?: Record<string, unknown>;
           note?: string;
+          /** 策略规则 + 执行步骤 + 保留/丢弃清单（M3 页展示） */
+          detail?: {
+            rules: string[];
+            steps: string[];
+            kept: Array<{
+              index: number;
+              role: string;
+              chars: number;
+              preview: string;
+              reason: string;
+            }>;
+            dropped: Array<{
+              index: number;
+              role: string;
+              chars: number;
+              preview: string;
+              reason: string;
+            }>;
+          };
         };
       };
 };

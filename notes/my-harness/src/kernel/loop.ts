@@ -36,6 +36,24 @@ function runAssemble(
     droppedCount: number;
     params?: Record<string, unknown>;
     note?: string;
+    detail?: {
+      rules: string[];
+      steps: string[];
+      kept: Array<{
+        index: number;
+        role: string;
+        chars: number;
+        preview: string;
+        reason: string;
+      }>;
+      dropped: Array<{
+        index: number;
+        role: string;
+        chars: number;
+        preview: string;
+        reason: string;
+      }>;
+    };
     preview: ReturnType<typeof summarizeMessage>[];
   };
 } {
@@ -58,6 +76,7 @@ function runAssemble(
         fromHook?.droppedCount ?? Math.max(0, beforeCount - afterCount),
       params: fromHook?.params,
       note: fromHook?.note,
+      detail: fromHook?.detail,
       // 发往模型的摘要（截断 preview）；完整内容仍在 forModel，此处只为 UI 对照
       preview: forModel.map(summarizeMessage),
     },
