@@ -7,6 +7,7 @@
 | [ROADMAP.md](./ROADMAP.md) | 学习目标、里程碑、统一数据结构、验证矩阵 |
 | [PLAN.md](./PLAN.md) | 实施与验证步骤表（按序执行与闸门勾选） |
 | [architecture.md](./architecture.md) | M0 定稿：分层、数据流、事件对应 |
+| [REVIEW.md](./REVIEW.md) | M0–M4 复习笔记（架构 / 流程 / 示例）；HTML：[`web/review/`](./web/review/index.html) |
 
 ## 快速开始
 

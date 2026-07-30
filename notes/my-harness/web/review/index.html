@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>my-harness 复习 · M0–M4</title>
+    <link rel="stylesheet" href="../shared/shared.css" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="review">
+      <header class="review-hero">
+        <p class="crumb">
+          <a href="../index/index.html">演示索引</a> ·
+          <a href="../../REVIEW.md">REVIEW.md</a>
+        </p>
+        <h1>my-harness 复习</h1>
+        <p class="sub">
+          M0–M4：架构分层、Loop / Context / SKILL 交互、示例入口。给「过完一遍再回忆」用。
+        </p>
+        <nav class="toc" aria-label="目录">
+          <a href="#mind">心智</a>
+          <a href="#arch">架构</a>
+          <a href="#loop">Loop</a>
+          <a href="#context">Context</a>
+          <a href="#skill">SKILL</a>
+          <a href="#events">事件</a>
+          <a href="#labs">示例页</a>
+          <a href="#pitfalls">坑</a>
+        </nav>
+      </header>
+
+      <section id="mind" class="card">
+        <h2>1. 心智模型</h2>
+        <div class="grid-2">
+          <article>
+            <h3>Harness 强制</h3>
+            <p>Loop、schema 校验、maxSteps / abort、Context 裁剪——代码说了算，不是靠 Prompt 自觉。</p>
+          </article>
+          <article>
+            <h3>内核无协议泄漏</h3>
+            <p><code>kernel/*</code> 只认统一类型；OpenAI 的 <code>tool_calls</code> / <code>role:"tool"</code> 只活在 Adapter。</p>
+          </article>
+          <article>
+            <h3>全量 vs 视图</h3>
+            <p>内存 <code>messages</code> 全量保留；<code>assembleContext</code> 只裁发给模型的视图；结果再 append 回全量。</p>
+          </article>
+          <article>
+            <h3>流式再执行</h3>
+            <p>碎片边到边看；工具 <strong>arguments 拼完并 parse</strong> 后才 <code>tool_start</code>。</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="arch" class="card">
+        <h2>2. 分层架构</h2>
+        <pre class="diagram" aria-label="分层数据流">浏览器  web/&lt;stage&gt;/
+   │  POST /api/run + SSE
+   ▼
+Server  server/index.ts     · .env · tools · skills · traces/
+   │
+   ▼
+Kernel  loop · context · validate · tools · skills
+   │  UnifiedMessage[]
+   ▼
+Adapter adapters/openai.ts  · Chat Completions stream</pre>
+        <table class="cmp">
+          <thead>
+            <tr>
+              <th>本项目</th>
+              <th>对照 Pi</th>
+              <th>职责</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>adapters/*</code></td>
+              <td>pi-ai</td>
+              <td>统一类型 ↔ 厂商协议</td>
+            </tr>
+            <tr>
+              <td><code>kernel/*</code></td>
+              <td>pi-agent-core</td>
+              <td>循环、工具、Context、事件</td>
+            </tr>
+            <tr>
+              <td><code>server/</code> + <code>web/</code></td>
+              <td>coding-agent 壳</td>
+              <td>SSE 演示；密钥不出前端</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="loop" class="card">
+        <h2>3. Agent Loop 交互</h2>
+        <ol class="flow">
+          <li><span class="tag harness">run_start</span> 组装初始 Context + tools</li>
+          <li>
+            <span class="tag harness">skill_*</span> 可选：目录 / 全文注入 / 挂
+            <code>load_skill</code>
+          </li>
+          <li>
+            <span class="tag harness">assembleContext</span> 全量 → 出站视图
+          </li>
+          <li>
+            <span class="tag out">llm_request</span> 带 before/after +
+            <code>openaiRequest</code>
+          </li>
+          <li>
+            <span class="tag model">stream_detail / text_delta</span> 碎片；工具拼完才执行
+          </li>
+          <li>
+            <span class="tag model">assistant_message</span> 完整消息（arguments 已是对象）
+          </li>
+          <li>
+            若有 toolCalls：
+            <span class="tag tool">tool_start</span> → validate → execute →
+            <span class="tag tool">tool_end</span> → append tool 消息 → 回到第 3 步
+          </li>
+          <li>
+            否则 <span class="tag harness">run_end</span>（finalAnswer + stopReason）
+          </li>
+        </ol>
+        <h3>stopReason</h3>
+        <p class="chips">
+          <span>completed</span>
+          <span>max_steps</span>
+          <span>timeout</span>
+          <span>aborted</span>
+          <span>tool_error</span>
+          <span>error</span>
+        </p>
+      </section>
+
+      <section id="context" class="card">
+        <h2>4. Context：全量轨迹 vs 出站视图</h2>
+        <pre class="diagram">内存 messages[]  ──完整历史──► Trace / append
+        │
+        │  assembleContext(identity | recent_n | char_budget)
+        │  + repairToolOrphans
+        ▼
+   发给模型的 messages'
+        ▼
+   Adapter → openaiRequest（页面 JSON 可对照）</pre>
+        <ul class="bullets">
+          <li><strong>identity</strong>：原样发出</li>
+          <li><strong>recent_n</strong>：system + 最近 N 条</li>
+          <li><strong>char_budget</strong>：按字符粗估裁到预算</li>
+        </ul>
+        <p class="callout">
+          Trace 里 <code>beforeCount</code> 大、<code>afterCount</code> 小 = 只裁了视图，内存没删。
+        </p>
+      </section>
+
+      <section id="skill" class="card">
+        <h2>5. SKILL 四种加载</h2>
+        <table class="cmp">
+          <thead>
+            <tr>
+              <th>skillAuto</th>
+              <th>谁决定加载全文</th>
+              <th>怎么进 Context</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>off</code></td>
+              <td>勾选或 <code>/skill:name</code></td>
+              <td>二次写入 system</td>
+            </tr>
+            <tr>
+              <td><code>match</code></td>
+              <td>Harness 词重叠打分</td>
+              <td>二次写入 system</td>
+            </tr>
+            <tr>
+              <td><code>model</code></td>
+              <td>分类请求 JSON</td>
+              <td>二次写入 system</td>
+            </tr>
+            <tr class="hl">
+              <td><code>agent</code></td>
+              <td>模型调 <code>load_skill</code></td>
+              <td>tool 回写 <strong>纯 Markdown</strong></td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="callout">
+          对齐 Pi：目录常驻 + 读 SKILL.md。本项目用 <code>load_skill</code> 同构，成功结果不是 JSON 壳。
+        </p>
+        <p>
+          示例规程：
+          <code>skills/weather-brief.md</code>、
+          <code>skills/add-checklist.md</code>
+        </p>
+      </section>
+
+      <section id="events" class="card">
+        <h2>6. 事件速查</h2>
+        <table class="cmp">
+          <thead>
+            <tr>
+              <th>type</th>
+              <th>方向</th>
+              <th>备注</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>llm_request</code></td>
+              <td>out</td>
+              <td>含 context 审计 + openaiRequest</td>
+            </tr>
+            <tr>
+              <td><code>stream_detail</code></td>
+              <td>in</td>
+              <td>落盘；text_delta 仅推 UI</td>
+            </tr>
+            <tr>
+              <td><code>tool_start/end</code></td>
+              <td>local</td>
+              <td>校验 + 执行 + 回写</td>
+            </tr>
+            <tr>
+              <td><code>skill_inject</code></td>
+              <td>local</td>
+              <td>catalog / auto / full</td>
+            </tr>
+            <tr>
+              <td><code>run_end</code> / <code>error</code></td>
+              <td>local</td>
+              <td>写 <code>traces/openai-latest.json</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="labs" class="card">
+        <h2>7. 示例页（边看边跑）</h2>
+        <div class="labs">
+          <a class="lab" href="../m1-openai-loop/index.html">
+            <strong>M1 流式循环</strong>
+            <span>时间线里看 arguments+= → tool_parse_done → tool_start</span>
+          </a>
+          <a class="lab" href="../m2-guards/index.html">
+            <strong>M2 约束</strong>
+            <span>maxSteps=1；localGuard 测未知工具 / 坏参数</span>
+          </a>
+          <a class="lab" href="../m3-context/index.html">
+            <strong>M3 Context</strong>
+            <span>改 history，对照 before/after 与 openaiRequest</span>
+          </a>
+          <a class="lab" href="../m4-skill/index.html">
+            <strong>M4 SKILL</strong>
+            <span>agent 看 load_skill Markdown；match/model 看 system 注入</span>
+          </a>
+        </div>
+        <h3>推荐试跑 prompt</h3>
+        <ul class="bullets mono-list">
+          <li>帮我查一下深圳的天气，再用工具算一下 12 加 30，最后用中文简短总结。</li>
+          <li>深圳今天天气怎么样？给我一个规范汇报。</li>
+          <li><code>/skill:weather-brief</code> 查深圳天气并按规程总结。</li>
+        </ul>
+      </section>
+
+      <section id="pitfalls" class="card">
+        <h2>8. 常见坑</h2>
+        <ol class="bullets">
+          <li>以为 Context 裁剪会删内存历史——不会，只影响出站。</li>
+          <li>半截 tool JSON 就执行——本项目禁止。</li>
+          <li><code>load_skill</code> 若再包 JSON 壳会误导——已改为纯 Markdown。</li>
+          <li>Cursor 沙箱带代理起 Server → 出站可能 <code>fetch failed</code>；本机起或清掉代理。</li>
+          <li>密钥绝不能进前端 / Trace。</li>
+        </ol>
+        <p class="sub footer-note">
+          下一步：M5 MCP · M6 Anthropic。闸门勾选见 PLAN / ROADMAP。
+        </p>
+      </section>
+    </main>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

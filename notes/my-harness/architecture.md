@@ -1,5 +1,7 @@
 # my-harness 架构（M0 定稿）
 
+复习入口（心智模型 + 流程 + 示例）：[`REVIEW.md`](./REVIEW.md) · [`web/review/`](./web/review/index.html)。
+
 ## 分层对应
 
 | 本项目 | Pi | 职责 |
@@ -54,6 +56,7 @@ M1 页：`协议时间线` 实时展示；加载 Trace 后重建轮次 + 时间�
 
 ```text
 notes/my-harness/
+  REVIEW.md
   src/types.ts
   src/kernel/loop.ts
   src/kernel/tools.ts
@@ -64,6 +67,8 @@ notes/my-harness/
   web/
     shared/shared.css · shared.js
     index/index.html · index.css · index.js
+    review/
+      index.html · style.css · main.js
     m1-openai-loop/
       index.html · style.css · main.js
       timeline.js · trace-view.js

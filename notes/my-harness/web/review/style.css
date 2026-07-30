@@ -1,0 +1,242 @@
+/**
+ * 复习页局部样式（主题变量来自 shared.css）
+ */
+
+.review {
+  max-width: 880px;
+}
+
+.review-hero {
+  margin-bottom: 8px;
+}
+
+.crumb {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 0 0 12px;
+}
+
+.toc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0 8px;
+}
+
+.toc a {
+  text-decoration: none;
+  font-size: 0.8rem;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--panel);
+}
+
+.toc a:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.review h2 {
+  font-size: 1.05rem;
+  margin: 0 0 12px;
+}
+
+.review h3 {
+  font-size: 0.9rem;
+  margin: 16px 0 8px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 640px) {
+  .grid-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.grid-2 article {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.grid-2 h3 {
+  margin: 0 0 6px;
+  color: var(--text);
+}
+
+.grid-2 p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.diagram {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  line-height: 1.55;
+  overflow-x: auto;
+  white-space: pre;
+  color: #c5d0db;
+}
+
+.cmp {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.cmp th,
+.cmp td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.cmp th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.cmp tr.hl td {
+  background: rgba(61, 156, 240, 0.08);
+}
+
+.flow {
+  margin: 0;
+  padding-left: 1.2rem;
+  font-size: 0.92rem;
+}
+
+.flow li {
+  margin-bottom: 8px;
+}
+
+.tag {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-right: 4px;
+}
+
+.tag.harness {
+  background: #243042;
+  color: #9ec5f0;
+}
+
+.tag.out {
+  background: #2a2438;
+  color: #c4b0f0;
+}
+
+.tag.model {
+  background: #1e3228;
+  color: #7ddeb0;
+}
+
+.tag.tool {
+  background: #332818;
+  color: #e6b86a;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+}
+
+.chips span {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.bullets {
+  margin: 0;
+  padding-left: 1.2rem;
+  font-size: 0.92rem;
+  color: var(--muted);
+}
+
+.bullets li {
+  margin-bottom: 6px;
+}
+
+.bullets strong,
+.bullets code {
+  color: var(--text);
+}
+
+.mono-list li {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--text);
+}
+
+.callout {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--accent);
+  background: rgba(61, 156, 240, 0.08);
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.callout code {
+  color: var(--text);
+}
+
+.labs {
+  display: grid;
+  gap: 10px;
+}
+
+.lab {
+  display: block;
+  text-decoration: none;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: inherit;
+}
+
+.lab:hover {
+  border-color: var(--accent);
+}
+
+.lab strong {
+  display: block;
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+
+.lab span {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.footer-note {
+  margin-top: 16px;
+}
