@@ -46,6 +46,8 @@ const PROMPTS = {
   add_only: "请只用 add 计算 100 加 23，并复述工具返回原文。",
   fs: "先 list_files，再 read_file 读 hello.txt，最后 write_file 写 notes/from-agent.txt，内容为「MCP fs 验证通过」。",
   both: "先用 add 算 7+8，再用 write_file 把结果写入 notes/sum.txt。",
+  remote:
+    "先用 ping 回显「remote ok」，再用 remember 存 key=city value=Shanghai，然后 recall city，最后 session_info，用中文说明这证明了会话有状态。",
 };
 
 const DIRECT_PRESETS = {
@@ -57,6 +59,10 @@ const DIRECT_PRESETS = {
     tool: "write_file",
     args: { path: "notes/demo.txt", content: "written via MCP direct call\n" },
   },
+  ping: { tool: "ping", args: { text: "hello remote" } },
+  remember: { tool: "remember", args: { key: "city", value: "Shanghai" } },
+  recall: { tool: "recall", args: { key: "city" } },
+  session: { tool: "session_info", args: {} },
 };
 
 function setStatus(text, cls) {
@@ -82,16 +88,20 @@ function renderFlow(backends, active) {
   }
   lastBackends = backends;
   flowCompare.replaceChildren();
-  for (const key of ["raw", "sdk"]) {
+  for (const key of ["raw", "sdk", "http"]) {
     const info = backends[key];
     if (!info) continue;
     const card = document.createElement("div");
-    card.className = "flow-card" + (key === active ? " active" : "");
+    const isActive =
+      key === "http"
+        ? selectedServerIds().includes("remote")
+        : key === active;
+    card.className = "flow-card" + (isActive ? " active" : "");
     const steps = (info.steps || []).map((s) => `<li>${s}</li>`).join("");
     card.innerHTML =
       `<h4>${key} · ${info.label || ""}</h4>` +
       `<ol>${steps}</ol>` +
-      `<div class="file">${info.file || ""}${info.package ? " · " + info.package : ""}</div>`;
+      `<div class="file">${info.file || ""}${info.package ? " · " + info.package : ""}${info.note ? " · " + info.note : ""}</div>`;
     flowCompare.append(card);
   }
 }
@@ -152,12 +162,19 @@ function renderServerChecks(servers, connectedIds) {
     row.className = "server-check";
     const checked =
       prev.has(s.id) || (!prev.size && (connected.has(s.id) || s.id === "demo"));
+    const kind = s.transport === "http" ? "http" : "stdio";
+    const extra =
+      kind === "http"
+        ? s.url || ""
+        : (s.toolsHint || []).join("/") || s.path || "";
     row.innerHTML = `
       <input type="checkbox" data-server="${s.id}" ${checked ? "checked" : ""} ${s.exists ? "" : "disabled"} />
       <span>
         <strong>${s.id}</strong>
+        <span class="pill">${kind}</span>
         ${s.connected ? '<span class="pill ok">up</span>' : '<span class="pill">down</span>'}
-        <span class="muted">${s.label || ""} · ${(s.toolsHint || []).join("/")}</span>
+        ${s.sessionId ? `<span class="pill ok">sid:${String(s.sessionId).slice(0, 8)}</span>` : ""}
+        <span class="muted">${s.label || ""} · ${extra}</span>
       </span>
     `;
     mcpServerList.append(row);
@@ -346,7 +363,7 @@ runBtn.onclick = async () => {
 
   const servers = selectedServerIds();
   const systemPrompt =
-    "你是助手。请用工具原名调用（如 echo、add、list_files、read_file、write_file）。" +
+    "你是助手。请用工具原名调用（如 echo、add、list_files、read_file、write_file、ping、remember、recall、session_info）。" +
     "不要编造工具结果。";
 
   try {

@@ -146,8 +146,8 @@ notes/my-harness/
 |------|------|------|
 | 注册表 | `src/mcp/registry.ts` | **数组 catalog** + 多会话；`resolve(name)→Client` |
 | 同名策略 | **原名 + first-wins** | 对齐 Pi extensions（keep first）；冲突记入 `conflicts` |
-| 公共接口 | `src/mcp/host.ts` | `McpHostClient`：connect / list / call / close |
-| raw / sdk | `stdio-client.ts` / `sdk-client.ts` | 每个 Server 一个 Client 实例 |
+| stdio | `stdio-client` / `sdk-client` | 本机 spawn；raw 手写 vs SDK |
+| 远程 HTTP | `http-client.ts` + `mcp-servers/remote-http/` | Streamable HTTP；`mcp-session-id` 有状态 |
 | 类型桥 | `src/mcp/bridge.ts` | 单 Client 的 call → ToolResult |
 | API | `/api/mcp/{status,connect,disconnect,call}` | connect 体：`{ servers:[], backend }` |
 | 演示 | `web/m5-mcp/` | 多选 Server + 路由表 + Loop 步骤 |
@@ -155,14 +155,17 @@ notes/my-harness/
 ### 调用找 Client
 
 ```text
-模型 tool_calls.name = "read_file"
+模型 tool_calls.name = "read_file" | "ping"
   → loop.executeTool
-  → createExecuteGuarded
   → mcpRegistry.execute(call)
        resolve → catalog 中第一个拥有该名的 session
-       client.callTool("read_file", args)   // 原名不变
+       stdio: client.callTool(name)
+       http:  同一 sessionId 的 Streamable HTTP Client
 ```
 
 > Pi coding-agent **无内置 MCP**；同名行为对照的是扩展工具注册：
 > `keeps first tool when two extensions register the same name`。
+>
+> 远程 MCP **可以有状态**（本演示 stateful + remember/recall）；协议也允许
+> `sessionIdGenerator: undefined` 的无状态模式，那更接近「每次 HTTP 独立」。
 

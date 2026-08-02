@@ -31,6 +31,12 @@ export type McpClientStatus = {
   toolCount: number;
   /** 最近 JSON-RPC 帧（教学习） */
   wireLog?: McpWireFrame[];
+  /** stdio | http；缺省按 stdio */
+  transport?: "stdio" | "http";
+  /** Streamable HTTP 的 URL */
+  url?: string | null;
+  /** 远程会话 id（mcp-session-id） */
+  sessionId?: string | null;
 };
 
 /**

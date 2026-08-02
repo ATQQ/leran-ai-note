@@ -12,6 +12,7 @@
  * 启动：npm run demo → http://127.0.0.1:8787/web/index/index.html
  */
 import http from "node:http";
+import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import {
@@ -58,22 +59,89 @@ const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 /**
  * MCP Server 目录（数组/注册表形式，可同时连接多个）。
  * 工具名保持 MCP 原名；同名按 catalog 顺序 first-wins（对齐 Pi extensions）。
+ * remote：Streamable HTTP（本机另端口模拟远程）。
  */
+const MCP_REMOTE_URL =
+  process.env.MCP_REMOTE_URL || "http://127.0.0.1:8790/mcp";
+const MCP_REMOTE_PORT = Number(process.env.MCP_REMOTE_PORT || 8790);
+
 const mcpRegistry = new McpRegistry([
   {
     id: "demo",
-    label: "mcp-demo（并列 notes/mcp-demo）",
+    label: "mcp-demo（stdio · 并列 notes/mcp-demo）",
     path: resolve(ROOT, "../mcp-demo/server.mjs"),
-    toolsHint: ["echo", "add"],
+    transport: "stdio",
   },
   {
     id: "fs",
-    label: "fs-sandbox（本项目 mcp-servers/）",
+    label: "fs-sandbox（stdio · 本项目 mcp-servers/）",
     path: join(ROOT, "mcp-servers/fs-sandbox/server.mjs"),
-    toolsHint: ["list_files", "read_file", "write_file"],
+    transport: "stdio",
+  },
+  {
+    id: "remote",
+    label: "remote-http（Streamable HTTP · :8790）",
+    transport: "http",
+    url: MCP_REMOTE_URL,
   },
 ]);
 
+/** 教学用：随 demo 拉起本机「远程」MCP HTTP 进程 */
+let remoteHttpChild: ChildProcess | null = null;
+
+async function waitForRemoteHealth(ms = 4000): Promise<boolean> {
+  const health = `http://127.0.0.1:${MCP_REMOTE_PORT}/health`;
+  const start = Date.now();
+  while (Date.now() - start < ms) {
+    try {
+      const res = await fetch(health);
+      if (res.ok) return true;
+    } catch {
+      /* retry */
+    }
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  return false;
+}
+
+function ensureRemoteHttpServer(): void {
+  const script = join(ROOT, "mcp-servers/remote-http/server.mjs");
+  if (!existsSync(script)) {
+    console.error("mcp remote: missing", script);
+    return;
+  }
+  void (async () => {
+    if (await waitForRemoteHealth(400)) {
+      console.log(`mcp remote: already up ${MCP_REMOTE_URL}`);
+      return;
+    }
+    remoteHttpChild = spawn(process.execPath, [script], {
+      env: {
+        ...process.env,
+        MCP_REMOTE_PORT: String(MCP_REMOTE_PORT),
+        MCP_REMOTE_HOST: "127.0.0.1",
+      },
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    remoteHttpChild.stderr?.setEncoding("utf8");
+    remoteHttpChild.stderr?.on("data", (chunk: string) => {
+      const t = chunk.trimEnd();
+      if (t) console.error("[mcp-remote]", t);
+    });
+    remoteHttpChild.on("exit", (code, signal) => {
+      console.error(
+        `mcp remote: exited code=${code ?? "null"} signal=${signal ?? "null"}`,
+      );
+      remoteHttpChild = null;
+    });
+    const ok = await waitForRemoteHealth(5000);
+    console.log(
+      ok
+        ? `mcp remote: listening ${MCP_REMOTE_URL}`
+        : `mcp remote: start timeout — 可手动 node mcp-servers/remote-http/server.mjs`,
+    );
+  })();
+}
 /** 默认 Host 后端（各 Server 会话可各自记录实际 backend） */
 let mcpBackend: McpBackend = "raw";
 
@@ -1021,10 +1089,11 @@ server.listen(PORT, "127.0.0.1", () => {
   console.log(
     `mcp catalog: ${mcpRegistry
       .listCatalog()
-      .map((s) => s.id + (s.exists ? "" : "(missing)"))
+      .map((s) => s.id + "/" + s.transport + (s.exists ? "" : "(missing)"))
       .join(", ")}`,
   );
-  // 启动时默认连 demo；可再连 fs。失败不阻断 HTTP Server
+  ensureRemoteHttpServer();
+  // 启动时默认连 demo；可再连 fs / remote。失败不阻断 HTTP Server
   void mcpRegistry
     .connectMany(["demo"], "raw")
     .then((r) => {
@@ -1045,6 +1114,10 @@ server.listen(PORT, "127.0.0.1", () => {
 
 async function shutdown(): Promise<void> {
   await mcpRegistry.shutdown();
+  if (remoteHttpChild && !remoteHttpChild.killed) {
+    remoteHttpChild.kill("SIGTERM");
+    remoteHttpChild = null;
+  }
   process.exit(0);
 }
 process.on("SIGINT", () => {

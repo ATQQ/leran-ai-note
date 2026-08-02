@@ -10,12 +10,22 @@ import { existsSync } from "node:fs";
 import type { ToolCall, ToolDef, ToolResult } from "../types.ts";
 import { executeMcpTool, mcpToolToDef } from "./bridge.ts";
 import { createMcpHostClient } from "./factory.ts";
+import { McpHttpClient } from "./http-client.ts";
 import type { McpBackend, McpHostClient, McpWireFrame } from "./host.ts";
+
+function configTransport(c: McpServerConfig): "stdio" | "http" {
+  if (c.transport === "http" || c.url) return "http";
+  return "stdio";
+}
 
 export type McpServerConfig = {
   id: string;
   label: string;
-  path: string;
+  /** stdio：本地脚本路径；http 可省略 */
+  path?: string;
+  /** streamable-http 远程 URL，例如 http://127.0.0.1:8790/mcp */
+  url?: string;
+  transport?: "stdio" | "http";
   toolsHint?: string[];
 };
 
@@ -52,10 +62,17 @@ export class McpRegistry {
     }
   }
 
-  listCatalog(): Array<McpServerConfig & { exists: boolean }> {
+  listCatalog(): Array<
+    McpServerConfig & { exists: boolean; transport: "stdio" | "http" }
+  > {
     return this.catalogOrder.map((id) => {
       const c = this.catalog.get(id)!;
-      return { ...c, exists: existsSync(c.path) };
+      const transport = configTransport(c);
+      const exists =
+        transport === "http"
+          ? Boolean(c.url)
+          : Boolean(c.path && existsSync(c.path));
+      return { ...c, transport, exists };
     });
   }
 
@@ -71,12 +88,25 @@ export class McpRegistry {
     if (!config) {
       throw new Error("unknown_mcp_server: " + serverId);
     }
-    if (!existsSync(config.path)) {
-      throw new Error("mcp_server_missing: " + config.path);
+    const transport = configTransport(config);
+    if (transport === "stdio") {
+      if (!config.path || !existsSync(config.path)) {
+        throw new Error("mcp_server_missing: " + (config.path ?? "(no path)"));
+      }
+    } else if (!config.url) {
+      throw new Error("mcp_server_missing_url: " + serverId);
     }
 
+    // http 固定走 SDK StreamableHTTP；stdio 才区分 raw|sdk
+    const effectiveBackend: McpBackend = transport === "http" ? "sdk" : backend;
+
     const existing = this.sessions.get(serverId);
-    if (existing?.client.connected && existing.backend === backend) {
+    if (
+      existing?.client.connected &&
+      existing.backend === effectiveBackend &&
+      (transport !== "http" ||
+        existing.client.status().url === config.url)
+    ) {
       existing.tools = await this.refreshTools(existing);
       existing.lastError = null;
       return existing.tools;
@@ -87,13 +117,18 @@ export class McpRegistry {
       this.sessions.delete(serverId);
     }
 
-    const client = createMcpHostClient(backend);
+    const client: McpHostClient =
+      transport === "http" ? new McpHttpClient() : createMcpHostClient(backend);
     try {
-      await client.connect(process.execPath, [config.path], config.path);
+      if (transport === "http") {
+        await client.connect(config.url!);
+      } else {
+        await client.connect(process.execPath, [config.path!], config.path);
+      }
       const session: Session = {
         config,
         client,
-        backend,
+        backend: effectiveBackend,
         tools: [],
         lastError: null,
       };
@@ -220,16 +255,20 @@ export class McpRegistry {
     const { tools, conflicts } = this.aggregateTools();
     const servers = this.listCatalog().map((c) => {
       const s = this.sessions.get(c.id);
+      const st = s?.client.status();
       return {
         id: c.id,
         label: c.label,
-        path: c.path,
+        path: c.path ?? null,
+        url: c.url ?? null,
+        transport: c.transport,
         exists: c.exists,
         toolsHint: c.toolsHint ?? [],
         connected: Boolean(s?.client.connected),
         backend: s?.backend ?? null,
-        pid: s?.client.status().pid ?? null,
-        lastError: s?.lastError ?? s?.client.status().lastError ?? null,
+        pid: st?.pid ?? null,
+        sessionId: st?.sessionId ?? null,
+        lastError: s?.lastError ?? st?.lastError ?? null,
         tools: (s?.tools ?? []).map((t) => ({
           name: t.name,
           description: t.description,
@@ -262,7 +301,7 @@ export class McpRegistry {
       wireLog: wireLog.slice(-80),
       backends: {
         raw: {
-          label: "手写 JSON-RPC",
+          label: "手写 JSON-RPC（stdio）",
           steps: [
             "spawn(node, server.mjs)",
             "自写 initialize + notifications/initialized",
@@ -271,7 +310,7 @@ export class McpRegistry {
           file: "src/mcp/stdio-client.ts",
         },
         sdk: {
-          label: "官方 SDK Client",
+          label: "官方 SDK Client（stdio）",
           steps: [
             "new StdioClientTransport({ command, args })",
             "new Client → client.connect(transport)（内含握手）",
@@ -279,6 +318,16 @@ export class McpRegistry {
           ],
           file: "src/mcp/sdk-client.ts",
           package: "@modelcontextprotocol/sdk",
+        },
+        http: {
+          label: "Streamable HTTP（远程）",
+          steps: [
+            "new StreamableHTTPClientTransport(url)",
+            "POST initialize → 响应头 mcp-session-id",
+            "后续 tools/* 带同一 session（有状态）",
+          ],
+          file: "src/mcp/http-client.ts",
+          note: "remote 条目固定走 HTTP Client，不受 raw/sdk 下拉影响",
         },
       },
     };

@@ -23,9 +23,9 @@
           <span id="mcpPill" class="pill">…</span>
         </div>
         <p class="hint">
-          多 Server 以<strong>注册表数组</strong>同时连接；工具名<strong>不改</strong>。
-          同名按 catalog 顺序 <code>first-wins</code>（对齐 Pi extensions）。
-          调用：<code>registry.resolve(name)</code> → 对应 Client。
+          多 Server 注册表：stdio（demo/fs）+ <strong>remote</strong>（Streamable HTTP ·
+          本机 :8790 模拟远程）。工具名不改；同名
+          <code>first-wins</code>。remote 固定走 HTTP Client（不受 raw/sdk 影响）。
         </p>
         <div class="controls">
           <div class="field grow">
@@ -139,6 +139,8 @@
           <button type="button" class="secondary" data-direct="echo">echo</button>
           <button type="button" class="secondary" data-direct="add">add</button>
           <button type="button" class="secondary" data-direct="read">read_file</button>
+          <button type="button" class="secondary" data-direct="ping">ping</button>
+          <button type="button" class="secondary" data-direct="remember">remember</button>
         </div>
         <pre id="directResult" class="result-box">（尚未调用）</pre>
       </div>
@@ -156,6 +158,7 @@
           <button type="button" class="secondary" data-prompt="v7">V7 demo</button>
           <button type="button" class="secondary" data-prompt="fs">fs 读写</button>
           <button type="button" class="secondary" data-prompt="both">跨 Server</button>
+          <button type="button" class="secondary" data-prompt="remote">远程 session</button>
         </div>
         <div class="row">
           <button id="run">运行</button>
