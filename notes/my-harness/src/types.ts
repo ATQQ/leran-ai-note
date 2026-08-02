@@ -36,6 +36,8 @@ export type ToolDef = {
   description: string;
   /** JSON Schema；建议 additionalProperties: false，减少乱传参 */
   parameters: Record<string, unknown>;
+  /** M7.1：高风险工具可要求前端确认后再执行 */
+  risk?: "high" | "normal";
 };
 
 /** 一次已解析的工具调用（arguments 已是对象） */
@@ -79,6 +81,12 @@ export type StreamDetail =
       content: string;
     }
   | {
+      kind: "reasoning_fragment";
+      seq: number;
+      delta: string;
+      accReasoning: string;
+    }
+  | {
       kind: "tool_fragment";
       index: number;
       id?: string;
@@ -86,6 +94,9 @@ export type StreamDetail =
       argumentsDelta?: string;
       accName: string;
       accArguments: string;
+      /** M7.3：部分解析预览（仅展示，不用于执行） */
+      partialArgs?: Record<string, unknown> | null;
+      partialNote?: string;
     }
   | {
       kind: "tool_parse_done";
@@ -104,9 +115,14 @@ export type RunEvent = {
     | "run_start"
     | "llm_request"
     | "text_delta"
+    /** M7.2：推理增量（与最终答复 text_delta 分开） */
+    | "reasoning_delta"
     | "stream_detail"
     | "assistant_message"
     | "tool_start"
+    /** M7.1：高风险工具等待前端确认 */
+    | "tool_confirm_pending"
+    | "tool_confirm_result"
     | "tool_end"
     | "skill_inject"
     /** M5：MCP 连接/工具表合并说明（非 Loop 本体步骤） */
@@ -174,6 +190,12 @@ export type RunOptions = {
   /** 前端取消 → Server abort → 传到此处 */
   signal?: AbortSignal;
   onEvent?: (event: RunEvent) => void;
+  /**
+   * M7.1：高风险工具执行前确认。
+   * 返回 "allow" 继续执行；"deny" 则写回拒绝 ToolResult，不调用真实实现。
+   * 未传 = 不要求确认。
+   */
+  confirmTool?: (call: ToolCall) => Promise<"allow" | "deny">;
   /**
    * Context 组装钩子（M3）。
    * 发往模型前必须经过此钩子；可返回裁剪后的 messages + 审计 meta。

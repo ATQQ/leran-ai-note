@@ -12,6 +12,7 @@
  */
 import type { RunEvent, RunOptions, StreamDetail, UnifiedMessage } from "../types.ts";
 import { assembleIdentity, estimateChars, summarizeMessage } from "./context.ts";
+import { isHighRiskTool } from "./tool-policy.ts";
 
 /** 给事件补上 ISO 时间戳后交给订阅方（SSE / Trace） */
 function emit(onEvent: RunOptions["onEvent"], event: Omit<RunEvent, "at">): void {
@@ -165,6 +166,15 @@ function describeStreamDetail(
       note: "本轮全部 text_fragment 拼完后的完整 content",
     };
   }
+  if (detail.kind === "reasoning_fragment") {
+    const d =
+      detail.delta.length > 40 ? `${detail.delta.slice(0, 40)}…` : detail.delta;
+    return {
+      title: `${roundLabel} · 推理碎片 #${detail.seq}`,
+      summary: `reasoning+=${JSON.stringify(d)} · acc=${detail.accReasoning.length}`,
+      note: "推理增量；不是最终答复，也不驱动工具执行",
+    };
+  }
   if (detail.kind === "tool_fragment") {
     const bits: string[] = [`#${detail.index}`];
     if (detail.nameDelta) bits.push(`name+=${JSON.stringify(detail.nameDelta)}`);
@@ -175,13 +185,18 @@ function describeStreamDetail(
           : detail.argumentsDelta;
       bits.push(`arguments+=${JSON.stringify(d)}`);
     }
+    if (detail.partialArgs) {
+      bits.push(`partial=${JSON.stringify(detail.partialArgs)}`);
+    } else if (detail.partialNote) {
+      bits.push(`partial:${detail.partialNote}`);
+    }
     if (!detail.nameDelta && !detail.argumentsDelta && detail.id) {
       bits.push(`id=${detail.id}`);
     }
     return {
       title: `${roundLabel} · 工具碎片 #${detail.index}`,
       summary: bits.join(" · "),
-      note: "同一 index 的多帧拼到同一桶；禁止半截 JSON 就执行",
+      note: "同一 index 的多帧拼到同一桶；禁止半截 JSON 就执行（partial 仅预览）",
     };
   }
   // tool_parse_done
@@ -294,6 +309,22 @@ export async function runAgent(opts: RunOptions): Promise<{
           });
         },
         onStreamDetail: (detail) => {
+          // M7.2：推理增量单独推 SSE（不落盘刷屏；汇总在 assistant_message.reasoning）
+          if (detail.kind === "reasoning_fragment") {
+            emit(opts.onEvent, {
+              type: "reasoning_delta",
+              phase: "stream",
+              title: `${roundLabel} · reasoning_delta`,
+              summary: detail.delta,
+              actor: "model",
+              direction: "in",
+              payload: {
+                delta: detail.delta,
+                accReasoning: detail.accReasoning,
+                seq: detail.seq,
+              },
+            });
+          }
           // 工具碎片 / 文本汇总 / 解析完成 → 推 UI 且写入 Trace（见 Server 落盘策略）
           const desc = describeStreamDetail(roundLabel, detail);
           emit(opts.onEvent, {
@@ -356,7 +387,58 @@ export async function runAgent(opts: RunOptions): Promise<{
           payload: { toolCallId: call.id, name: call.name, arguments: call.arguments },
         });
 
-        const result = await opts.executeTool(call);
+        let result;
+        if (opts.confirmTool && isHighRiskTool(call.name)) {
+          emit(opts.onEvent, {
+            type: "tool_confirm_pending",
+            phase: "confirm_tool",
+            title: `等待确认 · ${call.name}`,
+            summary: `高风险工具 id=${call.id}，未确认前不执行`,
+            actor: "harness",
+            direction: "local",
+            payload: {
+              toolCallId: call.id,
+              name: call.name,
+              arguments: call.arguments,
+              risk: "high",
+            },
+            note: "M7.1：前端 allow/deny → Server 唤醒后才继续",
+          });
+          const decision = await opts.confirmTool(call);
+          emit(opts.onEvent, {
+            type: "tool_confirm_result",
+            phase: "confirm_tool",
+            title:
+              decision === "allow"
+                ? `已确认执行 · ${call.name}`
+                : `已拒绝执行 · ${call.name}`,
+            summary: decision,
+            actor: "harness",
+            direction: "local",
+            payload: {
+              toolCallId: call.id,
+              name: call.name,
+              decision,
+            },
+          });
+          if (decision === "deny") {
+            result = {
+              toolCallId: call.id,
+              name: call.name,
+              content: JSON.stringify({
+                error: "user_denied",
+                message: "用户拒绝执行高风险工具",
+                name: call.name,
+                arguments: call.arguments,
+              }),
+              isError: true,
+            };
+          } else {
+            result = await opts.executeTool(call);
+          }
+        } else {
+          result = await opts.executeTool(call);
+        }
 
         // 统一消息里用 role:"tool" + toolCallId 绑定；Adapter 出站时再映射成厂商线格式
         const toolMessage: UnifiedMessage = {

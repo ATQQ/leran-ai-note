@@ -33,6 +33,7 @@ import {
   planSkillInjection,
   type SkillDef,
 } from "../src/kernel/skills.ts";
+import { annotateToolRisk, isHighRiskTool } from "../src/kernel/tool-policy.ts";
 import { MOCK_TOOLS, executeMockTool } from "../src/kernel/tools.ts";
 import { executeToolWithValidation } from "../src/kernel/validate.ts";
 import { loadEnv, packageRootFrom } from "../src/load-env.ts";
@@ -169,7 +170,9 @@ type RunBody = {
    * - unknown_tool：伪造未知工具名
    * - bad_args：伪造不合 schema 的参数
    */
-  localGuard?: "unknown_tool" | "bad_args";
+  localGuard?: "unknown_tool" | "bad_args" | "confirm_wipe";
+  /** M7.1：高风险工具需前端确认后再执行 */
+  requireConfirm?: boolean;
   /** M3：Context 裁剪策略 */
   contextStrategy?: "identity" | "recent_n" | "char_budget";
   /** recent_n：保留最近几条非 system（默认 6） */
@@ -281,6 +284,59 @@ function serveStatic(urlPath: string, res: http.ServerResponse): boolean {
   return true;
 }
 
+/**
+ * M7.1：等待前端 POST /api/run/confirm。
+ * key = `${runId}:${toolCallId}`
+ */
+type ConfirmWaiter = {
+  resolve: (decision: "allow" | "deny") => void;
+  createdAt: number;
+};
+const confirmWaiters = new Map<string, ConfirmWaiter>();
+
+function confirmKey(runId: string, toolCallId: string): string {
+  return runId + ":" + toolCallId;
+}
+
+function waitForToolConfirm(
+  runId: string,
+  call: ToolCall,
+  signal?: AbortSignal,
+  timeoutMs = 60_000,
+): Promise<"allow" | "deny"> {
+  const key = confirmKey(runId, call.id);
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (decision: "allow" | "deny") => {
+      if (settled) return;
+      settled = true;
+      confirmWaiters.delete(key);
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      resolve(decision);
+    };
+    const timer = setTimeout(() => finish("deny"), timeoutMs);
+    const onAbort = () => finish("deny");
+    confirmWaiters.set(key, { resolve: finish, createdAt: Date.now() });
+    if (signal) {
+      if (signal.aborted) onAbort();
+      else signal.addEventListener("abort", onAbort, { once: true });
+    }
+  });
+}
+
+function resolveToolConfirm(
+  runId: string,
+  toolCallId: string,
+  decision: "allow" | "deny",
+): boolean {
+  const key = confirmKey(runId, toolCallId);
+  const waiter = confirmWaiters.get(key);
+  if (!waiter) return false;
+  waiter.resolve(decision);
+  return true;
+}
+
 /** 带 schema 校验的执行入口；按名路由 load_skill / MCP registry / 本地 mock */
 function createExecuteGuarded(
   tools: ToolDef[],
@@ -339,6 +395,154 @@ function sanitizeHistory(raw: unknown[]): UnifiedMessage[] {
 /**
  * 不经模型的本地校验演示：发与真实 run 同构的 SSE 事件，便于 m2 页对照 V3。
  */
+/**
+ * M7.1 本地确认演示：伪造 wipe_demo 调用，挂起等前端 allow/deny。
+ * 不调模型，便于无 Key 验收确认门闩。
+ */
+async function runConfirmWipeDemo(
+  res: http.ServerResponse,
+  runId: string,
+  signal: AbortSignal,
+): Promise<void> {
+  const tools = annotateToolRisk(MOCK_TOOLS);
+  const trace = new TraceRecorder({
+    provider: "openai",
+    model: MODEL,
+    baseUrl: BASE,
+    toolsSchema: openaiToolsSchemaForTrace(tools),
+  });
+  const onEvent = (event: RunEvent) => {
+    if (event.type !== "text_delta" && event.type !== "reasoning_delta") {
+      trace.addFromEvent(event);
+    }
+    writeSse(res, event.type, event);
+  };
+  const call: ToolCall = {
+    id: "demo_wipe_" + Date.now(),
+    name: "wipe_demo",
+    arguments: { confirmToken: "m7-local" },
+  };
+
+  writeSse(res, "meta", {
+    model: MODEL,
+    adapter: "local-confirm",
+    localGuard: "confirm_wipe",
+    runId,
+    requireConfirm: true,
+    highRiskTools: [...tools.filter((t) => t.risk === "high").map((t) => t.name)],
+  });
+
+  onEvent({
+    type: "run_start",
+    phase: "init",
+    title: "本地确认门闩演示",
+    summary: "伪造 wipe_demo（高风险），等待前端确认",
+    actor: "harness",
+    direction: "local",
+    payload: { runId, call },
+    at: new Date().toISOString(),
+  });
+  onEvent({
+    type: "assistant_message",
+    phase: "model_response",
+    title: "伪造 · 模型响应",
+    summary: "请求执行 wipe_demo",
+    actor: "model",
+    direction: "in",
+    payload: { content: null, toolCalls: [call], reasoning: null },
+    at: new Date().toISOString(),
+  });
+  onEvent({
+    type: "tool_start",
+    phase: "execute_tool",
+    title: `执行工具 · ${call.name}`,
+    summary: `id=${call.id}`,
+    actor: "tool",
+    direction: "local",
+    payload: { toolCallId: call.id, name: call.name, arguments: call.arguments },
+    at: new Date().toISOString(),
+  });
+  onEvent({
+    type: "tool_confirm_pending",
+    phase: "confirm_tool",
+    title: `等待确认 · ${call.name}`,
+    summary: `高风险工具 id=${call.id}，未确认前不执行`,
+    actor: "harness",
+    direction: "local",
+    payload: {
+      toolCallId: call.id,
+      name: call.name,
+      arguments: call.arguments,
+      risk: "high",
+      runId,
+    },
+    note: "请在页面点「允许」或「拒绝」",
+    at: new Date().toISOString(),
+  });
+
+  const decision = await waitForToolConfirm(runId, call, signal);
+  onEvent({
+    type: "tool_confirm_result",
+    phase: "confirm_tool",
+    title: decision === "allow" ? `已确认执行 · ${call.name}` : `已拒绝执行 · ${call.name}`,
+    summary: decision,
+    actor: "harness",
+    direction: "local",
+    payload: { toolCallId: call.id, name: call.name, decision },
+    at: new Date().toISOString(),
+  });
+
+  let result;
+  if (decision === "deny") {
+    result = {
+      toolCallId: call.id,
+      name: call.name,
+      content: JSON.stringify({
+        error: "user_denied",
+        message: "用户拒绝执行高风险工具",
+        name: call.name,
+      }),
+      isError: true,
+    };
+  } else {
+    result = await createExecuteGuarded(tools, DISCOVERED_SKILLS, new Set())(call);
+  }
+
+  onEvent({
+    type: "tool_end",
+    phase: "append_tool_result",
+    title: `回写工具结果 · ${call.name}`,
+    summary: result.isError ? "工具返回错误（已回写）" : "结果已写入 Context",
+    actor: "harness",
+    direction: "local",
+    payload: {
+      appended: {
+        role: "tool",
+        content: result.content,
+        toolCallId: result.toolCallId,
+        name: result.name,
+      },
+      isError: result.isError ?? false,
+    },
+    at: new Date().toISOString(),
+  });
+
+  const stopReason = decision === "deny" ? "user_denied" : "completed";
+  onEvent({
+    type: "run_end",
+    phase: "final_answer",
+    title: "运行结束",
+    summary: `stopReason=${stopReason}`,
+    actor: "harness",
+    direction: "local",
+    payload: { finalText: null, stopReason, decision },
+    at: new Date().toISOString(),
+  });
+  trace.finish({ stopReason, decision, localGuard: "confirm_wipe" });
+  const path = trace.write(join(ROOT, "traces"), "openai");
+  writeSse(res, "done", { stopReason, decision, tracePath: path, runId });
+}
+
 async function runLocalGuardDemo(
   res: http.ServerResponse,
   kind: "unknown_tool" | "bad_args",
@@ -638,6 +842,37 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
   }
 
   // 主入口：流式跑一轮 Agent（或本地守卫演示）
+  /** M7.1：前端对高风险工具放行 / 拒绝 */
+  if (req.method === "POST" && pathname === "/api/run/confirm") {
+    let body: { runId?: string; toolCallId?: string; decision?: string } = {};
+    try {
+      const raw = await readBody(req);
+      if (raw) body = JSON.parse(raw) as typeof body;
+    } catch {
+      sendJson(res, 400, { error: "invalid JSON body" });
+      return;
+    }
+    const runId = typeof body.runId === "string" ? body.runId.trim() : "";
+    const toolCallId =
+      typeof body.toolCallId === "string" ? body.toolCallId.trim() : "";
+    const decision = body.decision === "allow" ? "allow" : body.decision === "deny" ? "deny" : null;
+    if (!runId || !toolCallId || !decision) {
+      sendJson(res, 400, {
+        error: "runId, toolCallId, decision(allow|deny) required",
+      });
+      return;
+    }
+    const ok = resolveToolConfirm(runId, toolCallId, decision);
+    sendJson(res, ok ? 200 : 404, {
+      ok,
+      runId,
+      toolCallId,
+      decision,
+      error: ok ? null : "no_pending_confirm",
+    });
+    return;
+  }
+
   if (req.method === "POST" && pathname === "/api/run") {
     let body: RunBody = {};
     try {
@@ -669,9 +904,20 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       "Access-Control-Allow-Origin": "*",
     });
 
+    const requireConfirm = Boolean(body.requireConfirm);
+    const runId = "run_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+
     // 本地守卫：不需要 API Key，确定性产出错误 ToolResult（V3）
     if (body.localGuard === "unknown_tool" || body.localGuard === "bad_args") {
       await runLocalGuardDemo(res, body.localGuard, stopOnToolError);
+      res.end();
+      return;
+    }
+    // M7.1：本地确认门闩（不经模型）
+    if (body.localGuard === "confirm_wipe") {
+      const acLocal = new AbortController();
+      req.on("close", () => acLocal.abort());
+      await runConfirmWipeDemo(res, runId, acLocal.signal);
       res.end();
       return;
     }
@@ -767,6 +1013,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       // 同名：MCP 覆盖本地 mock；多 MCP 内部已 first-wins
       runTools = mergeLocalAndMcpTools(MOCK_TOOLS, mcpDefs);
     }
+    runTools = annotateToolRisk(runTools);
 
     const trace = new TraceRecorder({
       provider: "openai",
@@ -787,8 +1034,17 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
           });
         }
       }
-      if (event.type !== "text_delta") {
+      // 增量事件只推 UI；确认/工具步骤仍落盘
+      if (event.type !== "text_delta" && event.type !== "reasoning_delta") {
         trace.addFromEvent(event);
+      }
+      // 给确认事件附带 runId，方便前端回 POST
+      if (
+        (event.type === "tool_confirm_pending" || event.type === "tool_confirm_result") &&
+        event.payload &&
+        typeof event.payload === "object"
+      ) {
+        (event.payload as Record<string, unknown>).runId = runId;
       }
       writeSse(res, event.type, event);
     };
@@ -965,6 +1221,9 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     writeSse(res, "meta", {
       model: MODEL,
       adapter: "openai",
+      runId,
+      requireConfirm,
+      highRiskTools: runTools.filter((t) => t.risk === "high" || isHighRiskTool(t.name)).map((t) => t.name),
       maxSteps,
       timeoutMs: timeoutMs ?? null,
       stopOnToolError,
@@ -1004,6 +1263,9 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         assembleContext,
         signal: ac.signal,
         onEvent,
+        confirmTool: requireConfirm
+          ? (call) => waitForToolConfirm(runId, call, ac.signal)
+          : undefined,
       });
       trace.finish({
         finalAnswer: result.finalText,

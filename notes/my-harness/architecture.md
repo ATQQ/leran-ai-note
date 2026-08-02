@@ -169,3 +169,17 @@ notes/my-harness/
 > 远程 MCP **可以有状态**（本演示 stateful + remember/recall）；协议也允许
 > `sessionIdGenerator: undefined` 的无状态模式，那更接近「每次 HTTP 独立」。
 
+## M6（跳过）
+
+Anthropic Adapter 未实现。
+
+## M7 可选增强
+
+| 能力 | 位置 | 说明 |
+|------|------|------|
+| 确认门闩 | `tool-policy.ts` + `loop.confirmTool` | 高风险 `wipe_demo` / `write_file`；`POST /api/run/confirm` |
+| reasoning | `reasoning_delta` + adapter `reasoning_fragment` | 与最终答复分流；网关无字段则空 |
+| partial JSON | `parse-partial-json.ts` | `tool_fragment.partialArgs` 仅预览，执行仍在流结束后 |
+| Trace 步进 | `web/shared/trace-player.js` | 对齐 FC demo Viewer 的步进 / actor 高亮 |
+| 演示 | `web/m7-enhancements/` | 本地 `confirm_wipe` 可不经模型验收 7.1 |
+

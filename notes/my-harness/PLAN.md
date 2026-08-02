@@ -23,7 +23,7 @@
 | 3 | M3 Context 策略 | `assembleContext` + 裁剪 Trace | V5 | 1–2 日 |
 | 4 | M4 SKILL | 发现 + 注入开关页 | V6 | 1–2 日 |
 | 5 | M5 MCP 桥 | stdio → ToolDef / ToolResult | V7 | 1–2 日 |
-| 6 | M6 Anthropic | 第二 Adapter，同场景可跑 | V8 | 1–2 日 |
+| 6 | M6 Anthropic | ~~第二 Adapter~~（**已跳过**） | — | — |
 | 7 | M7（可选） | 权限门闩 / thinking / Trace 增强 | 自定 | 机动 |
 
 **周节奏（参考）**：第 1 周 M0–M2 → 第 2 周 M3–M4 → 第 3 周 M5–M6 → 机动 M7 + 回写 knowledge。
@@ -242,5 +242,6 @@
 | M2 | **实现完成**：校验 / maxSteps / abort / timeout + `web/m2-guards/`；待本地勾选 V3/V4 |
 | M3 | **实现完成**：`assembleContext` + Trace 前后条数 + `web/m3-context/`；待本地勾选 V5 |
 | M4 | **实现完成**：SKILL 发现/目录/全文注入 + `web/m4-skill/`；待本地勾选 V6 |
-| M5 | **实现完成**：raw（手写）+ sdk（官方包）双 Host 对照 + `web/m5-mcp/`；待本地勾选 V7/V7b |
-| M6 | 下一步（闸门通过后） |
+| M5 | **实现完成**：raw/sdk stdio + 远程 Streamable HTTP + `web/m5-mcp/`；待本地勾选 V7/V7b |
+| M6 | **跳过**（Anthropic Adapter） |
+| M7 | **实现完成**：确认门闩 / reasoning_delta / partialArgs / Trace 步进 + `web/m7-enhancements/` |

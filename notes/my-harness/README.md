@@ -32,4 +32,6 @@ npm run demo
 - **M2**：`maxSteps` / `timeoutMs` / 取消 abort；`kernel/validate.ts` 执行前 schema 校验；`stopOnToolError`；`web/m2-guards/` 场景页（含不经模型的 `localGuard`）。闸门 V3/V4 待你本地勾选。
 - **M3**：`kernel/context.ts`（identity / recent_n / char_budget）+ `llm_request` Trace 记录裁剪前后条数；`web/m3-context/` 对照页；`seedPairs` 灌长历史。闸门 V5 待本地勾选。
 - **M4**：`skills/*.md` + `kernel/skills.ts` 渐进披露（目录 → 全文）；`skill_inject` Trace；`web/m4-skill/` 开关对照。闸门 V6 待本地勾选。
-- **M5**：双 Host 后端对照——手写 JSON-RPC（`stdio-client`）与官方 SDK（`sdk-client`）共用 `McpHostClient`；对接 `notes/mcp-demo`；`web/m5-mcp/` 可切换。闸门 V7 待本地勾选。
+- **M5**：双 Host 后端对照——手写 JSON-RPC（`stdio-client`）与官方 SDK（`sdk-client`）共用 `McpHostClient`；多 Server + 远程 Streamable HTTP；`web/m5-mcp/`。闸门 V7 待本地勾选。
+- **M6**：跳过 Anthropic Adapter。
+- **M7**：高风险确认门闩（`wipe_demo` / `write_file`）+ `reasoning_delta` + 工具参数 `partialArgs` 预览 + Trace 步进播放器；`web/m7-enhancements/`。

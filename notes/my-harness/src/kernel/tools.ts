@@ -37,6 +37,23 @@ export const MOCK_TOOLS: ToolDef[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: "wipe_demo",
+    description:
+      "【高风险】清空演示暂存区（假操作）。M7 用于确认门闩：未确认不得执行。",
+    risk: "high",
+    parameters: {
+      type: "object",
+      properties: {
+        confirmToken: {
+          type: "string",
+          description: "任意非空字符串即可（演示用）",
+        },
+      },
+      required: ["confirmToken"],
+      additionalProperties: false,
+    },
+  },
 ];
 
 /** name → 实现函数；与 schema 一一对应 */
@@ -53,6 +70,11 @@ const impl: Record<string, (args: Record<string, unknown>) => Promise<unknown>> 
     return { city: key, ...hit, source: "local-mock" };
   },
   add: async ({ a, b }) => ({ a, b, sum: Number(a) + Number(b) }),
+  wipe_demo: async ({ confirmToken }) => ({
+    wiped: true,
+    confirmToken: String(confirmToken ?? ""),
+    note: "演示：未真正删除任何文件；若你看到本结果，说明确认门闩已放行",
+  }),
 };
 
 /**

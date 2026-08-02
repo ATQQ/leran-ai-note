@@ -10,6 +10,7 @@
  * - 部分中转站会带 reasoning_content：记入 UnifiedMessage.reasoning，不当最终答复
  * - onStreamDetail 把「按 index 拼碎片」过程暴露给学习 UI / Trace（text 只汇总，工具全记）
  */
+import { tryParsePartialJson } from "../kernel/parse-partial-json.ts";
 import type { LlmAdapter, StreamDetail, ToolDef, UnifiedMessage } from "../types.ts";
 
 type OpenAIConfig = {
@@ -183,6 +184,7 @@ export function createOpenAIAdapter(config: OpenAIConfig): LlmAdapter {
       let content = "";
       let reasoning = "";
       let textDeltaCount = 0;
+      let reasoningDeltaCount = 0;
       // index → 累加中的 tool_call（流式 name/arguments 可能分多片到达）
       // 为何用 Map：一次请求会产生很多 SSE JSON 帧，同一 index 的碎片要拼到同一桶
       const toolAcc = new Map<number, OpenAIToolCallAcc>();
@@ -233,13 +235,21 @@ export function createOpenAIAdapter(config: OpenAIConfig): LlmAdapter {
             accContent: content,
           });
         }
-        // 推理增量：只累加，默认不推给用户可见区（由上层决定是否展示）
+        // M7.2：推理增量 → reasoning_fragment（与 content 分开；不当最终答复）
         if (typeof delta.reasoning_content === "string" && delta.reasoning_content) {
           reasoning += delta.reasoning_content;
+          reasoningDeltaCount += 1;
+          emitDetail({
+            kind: "reasoning_fragment",
+            seq: reasoningDeltaCount,
+            delta: delta.reasoning_content,
+            accReasoning: reasoning,
+          });
         }
 
         // 工具调用增量：按 index 拼接，每拼一帧就发 tool_fragment（学习可见）
         // 禁止半截 JSON 就执行——要等流结束后 parseArgs
+        // M7.3：附带 partialArgs 预览（修复启发式，仅展示）
         if (delta.tool_calls) {
           for (const tc of delta.tool_calls) {
             const idx = tc.index ?? 0;
@@ -254,6 +264,7 @@ export function createOpenAIAdapter(config: OpenAIConfig): LlmAdapter {
             if (nameDelta) acc.name += nameDelta;
             if (argumentsDelta) acc.arguments += argumentsDelta;
 
+            const partial = tryParsePartialJson(acc.arguments);
             emitDetail({
               kind: "tool_fragment",
               index: idx,
@@ -262,6 +273,8 @@ export function createOpenAIAdapter(config: OpenAIConfig): LlmAdapter {
               argumentsDelta,
               accName: acc.name,
               accArguments: acc.arguments,
+              partialArgs: partial.partial,
+              partialNote: partial.note,
             });
           }
         }

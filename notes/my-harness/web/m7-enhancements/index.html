@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>M7 · 可选增强</title>
+    <link rel="stylesheet" href="../shared/shared.css" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="wide">
+      <p class="back"><a href="../index/index.html">← 索引</a></p>
+      <h1>M7 · 可选增强</h1>
+      <p class="sub">
+        跳过 Anthropic。本页演示：高风险确认 · reasoning 分流 · 参数 partial 预览 · Trace 步进回放。
+      </p>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="row panel-head">
+            <strong>① 高风险确认（7.1）</strong>
+            <span id="confirmPill" class="pill">idle</span>
+          </div>
+          <p class="hint">
+            本地演示不经模型：伪造 <code>wipe_demo</code>，SSE 挂起直到
+            <code>POST /api/run/confirm</code>。也可开「确认门闩」走真实模型。
+          </p>
+          <label class="check">
+            <input id="requireConfirm" type="checkbox" checked />
+            requireConfirm（模型路径也启用）
+          </label>
+          <div class="row">
+            <button type="button" id="btnLocalConfirm">本地 · 等待确认 wipe_demo</button>
+            <button type="button" id="btnAllow" class="ok" disabled>允许</button>
+            <button type="button" id="btnDeny" class="danger" disabled>拒绝</button>
+          </div>
+          <pre id="confirmBox" class="box">（尚无待确认调用）</pre>
+        </div>
+
+        <div class="card">
+          <div class="row panel-head"><strong>② 模型路径（7.2 / 7.3）</strong></div>
+          <p class="hint">
+            reasoning 走独立面板；工具 arguments 流式时显示 partial 预览（仍等流结束后才执行）。
+          </p>
+          <label for="prompt">用户请求</label>
+          <textarea id="prompt">
+请调用 wipe_demo，confirmToken 用「m7-demo」，然后用中文说明是否执行成功。</textarea>
+          <div class="row">
+            <button type="button" class="secondary" data-prompt="wipe">wipe_demo</button>
+            <button type="button" class="secondary" data-prompt="weather">天气+加法</button>
+          </div>
+          <div class="row">
+            <button id="run">运行（模型）</button>
+            <button id="stop" class="secondary" disabled>取消</button>
+            <span id="status" class="pill">idle</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="row panel-head"><strong>推理流（reasoning）</strong></div>
+          <pre id="reasoning" class="stream muted-stream">（无 reasoning_content 时保持空）</pre>
+        </div>
+        <div class="card">
+          <div class="row panel-head"><strong>最终答复（content）</strong></div>
+          <pre id="answer" class="stream">（等待…）</pre>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row panel-head">
+          <strong>③ 参数 partial 预览（7.3）</strong>
+          <span id="partialPill" class="pill">—</span>
+        </div>
+        <pre id="partialBox" class="box">（工具 arguments 碎片到达后显示 tryParsePartialJson）</pre>
+      </div>
+
+      <div class="card">
+        <div class="row panel-head"><strong>事件 / 步骤</strong></div>
+        <pre id="events" class="box tall">（空）</pre>
+      </div>
+
+      <div class="card">
+        <div class="row panel-head">
+          <strong>④ Trace 步进回放（7.4）</strong>
+          <span id="playerPill" class="pill">—</span>
+        </div>
+        <p class="hint">
+          对齐 function-call-demo Viewer 的步进能力：加载
+          <code>/api/trace/latest</code>，逐步高亮 actor。
+        </p>
+        <div class="row">
+          <button type="button" id="btnLoadTrace" class="secondary">加载 latest Trace</button>
+          <button type="button" id="btnPrev" class="secondary" disabled>上一步</button>
+          <button type="button" id="btnNext" class="secondary" disabled>下一步</button>
+          <button type="button" id="btnPlay" class="secondary" disabled>自动播放</button>
+        </div>
+        <div id="flow" class="flow">
+          <div class="node" data-actor="harness">Harness</div>
+          <div class="node" data-actor="model">Model</div>
+          <div class="node" data-actor="tool">Tool</div>
+        </div>
+        <pre id="playerStep" class="box">（尚未加载 Trace）</pre>
+      </div>
+    </main>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

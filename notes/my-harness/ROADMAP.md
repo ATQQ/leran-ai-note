@@ -293,9 +293,12 @@ notes/my-harness/
 
 ### M7 · 可选增强
 
-- 权限控制：高风险工具需前端确认后再由 Server 执行（见结论库安全章节）。
-- reasoning / thinking 增量展示；工具参数流式 JSON 的部分解析（若 Provider 支持）。
-- Trace 回放组件与 `function-call-demo/viewer.html` 能力对齐或复用。
+- [x] 权限控制：高风险工具需前端确认后再由 Server 执行（`wipe_demo` / `write_file`；`web/m7-enhancements/`）。
+- [x] reasoning / thinking 增量展示（`reasoning_delta`；网关提供 `reasoning_content` 时可见）。
+- [x] 工具参数流式 JSON 部分解析预览（`partialArgs`；执行仍在流结束后）。
+- [x] Trace 步进回放（`web/shared/trace-player.js`，对齐 FC demo Viewer 核心能力）。
+
+> M6 Anthropic Adapter：**已跳过**。
 
 ---
 
