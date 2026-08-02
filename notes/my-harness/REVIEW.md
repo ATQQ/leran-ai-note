@@ -88,8 +88,10 @@ run_start
 | 策略 | 行为 |
 |------|------|
 | `identity` | 原样发出 |
-| `recent_n` | 保留 system + 最近 N 条（并修孤儿） |
+| `recent_n` | 保留 system + 最近 N 条（并修孤儿）；更早的直接丢 |
 | `char_budget` | 按字符粗估裁到预算内 |
+| `summarize` | 更早历史 → 本地抽取摘要 1 条 + 最近 N 原文 |
+| `summarize_llm` | 同上，摘要正文由短补全生成（失败回退本地） |
 
 **示例心智**：历史很长时，Trace 里 `context.beforeCount` 可以很大，`afterCount` 很小——说明裁的是出站视图，不是把内存删掉。
 

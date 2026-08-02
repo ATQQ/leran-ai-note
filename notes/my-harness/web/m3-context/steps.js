@@ -213,13 +213,38 @@ export const STRATEGY_DOCS = {
     params: (maxChars) =>
       `当前 maxChars=${maxChars} → 发给模型的粗估字符上限（含 system）`,
   },
+  summarize: {
+    title: "summarize · 本地摘要",
+    rules: [
+      "与 recent_n 对比：旧消息不是直接丢掉，而是压成 1 条【历史摘要】。",
+      "前缀 system 保留；最近 recentN 条原文保留（含 tool 孤儿回补）。",
+      "较早段用本地抽取（角色 + 短预览列表），不调模型、可离线演示。",
+      "摘要以 user 消息插入 system 与最近窗口之间。",
+      "Harness 内存全量轨迹不变；摘要只影响发给模型的视图。",
+    ],
+    params: (recentN) =>
+      `当前 recentN=${recentN} → 最近 ${recentN} 条原文，更早的变摘要`,
+  },
+  summarize_llm: {
+    title: "summarize_llm · 模型摘要",
+    rules: [
+      "结构同 summarize：摘要 1 条 + 最近 recentN 原文。",
+      "摘要正文另调一次短补全（非流式）；失败回退本地抽取。",
+      "适合体会「lossy 压缩」：模型续聊仍知道旧目标，但不保证逐字还原。",
+      "成本：每轮发模型前可能多 1 次摘要请求（本演示未做缓存）。",
+    ],
+    params: (recentN) =>
+      `当前 recentN=${recentN} → LLM 压缩较早历史，最近 ${recentN} 条不动`,
+  },
 };
 
 export function renderStrategyHelp(el, strategy, { recentN, maxChars }) {
   const doc = STRATEGY_DOCS[strategy] || STRATEGY_DOCS.identity;
   const paramText =
     typeof doc.params === "function"
-      ? doc.params(strategy === "recent_n" ? recentN : maxChars)
+      ? doc.params(
+          strategy === "char_budget" ? maxChars : recentN,
+        )
       : doc.params;
 
   el.replaceChildren();

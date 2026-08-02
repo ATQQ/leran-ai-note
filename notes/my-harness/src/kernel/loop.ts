@@ -23,10 +23,10 @@ function emit(onEvent: RunOptions["onEvent"], event: Omit<RunEvent, "at">): void
  * 归一化 assembleContext 返回值（兼容只返回数组的旧写法）。
  * 始终带上 before/after 条数与字符数，供 Trace / m3 页审计。
  */
-function runAssemble(
+async function runAssemble(
   assemble: NonNullable<RunOptions["assembleContext"]>,
   messages: UnifiedMessage[],
-): {
+): Promise<{
   messages: UnifiedMessage[];
   meta: {
     strategy: string;
@@ -57,8 +57,8 @@ function runAssemble(
     };
     preview: ReturnType<typeof summarizeMessage>[];
   };
-} {
-  const raw = assemble(messages);
+}> {
+  const raw = await assemble(messages);
   const forModel = Array.isArray(raw) ? raw : raw.messages;
   const fromHook = Array.isArray(raw) ? undefined : raw.meta;
   const beforeCount = messages.length;
@@ -266,8 +266,8 @@ export async function runAgent(opts: RunOptions): Promise<{
 
       steps += 1;
       const roundLabel = `ROUND${steps}`;
-      // 发往模型前只走 assembleContext：裁剪的是「视图」，内存 messages 仍完整
-      const assembled = runAssemble(assemble, messages);
+      // 发往模型前只走 assembleContext：裁剪/摘要的是「视图」，内存 messages 仍完整
+      const assembled = await runAssemble(assemble, messages);
       const forModel = assembled.messages;
       const ctx = assembled.meta;
 

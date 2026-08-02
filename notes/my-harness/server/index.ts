@@ -21,8 +21,11 @@ import {
   openaiToolsSchemaForTrace,
 } from "../src/adapters/openai.ts";
 import {
+  buildLocalHistorySummary,
   buildSeedHistory,
   createAssembleContext,
+  type ContextStrategyName,
+  type SummarizeHistoryFn,
 } from "../src/kernel/context.ts";
 import { runAgent } from "../src/kernel/loop.ts";
 import {
@@ -173,9 +176,9 @@ type RunBody = {
   localGuard?: "unknown_tool" | "bad_args" | "confirm_wipe";
   /** M7.1：高风险工具需前端确认后再执行 */
   requireConfirm?: boolean;
-  /** M3：Context 裁剪策略 */
-  contextStrategy?: "identity" | "recent_n" | "char_budget";
-  /** recent_n：保留最近几条非 system（默认 6） */
+  /** M3：Context 裁剪/摘要策略 */
+  contextStrategy?: ContextStrategyName;
+  /** recent_n / summarize*：保留最近几条非 system（默认 6） */
   recentN?: number;
   /** char_budget：发给模型的粗略字符上限（默认 2000） */
   maxChars?: number;
@@ -335,6 +338,79 @@ function resolveToolConfirm(
   if (!waiter) return false;
   waiter.resolve(decision);
   return true;
+}
+
+/**
+ * M3+：用一次短非流式补全把较早历史压成摘要（summarize_llm）。
+ * 失败时回退本地抽取，不阻断主循环。
+ */
+function createLlmSummarizeFn(): SummarizeHistoryFn {
+  return async ({ older, recentN }) => {
+    const fallback = buildLocalHistorySummary(older);
+    if (!KEY || KEY.includes("xxx") || !older.length) return fallback;
+    const digest = buildLocalHistorySummary(older, {
+      maxLines: 40,
+      maxChars: 3500,
+    });
+    const url = `${BASE.replace(/\/$/, "")}/chat/completions`;
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${KEY}`,
+        },
+        body: JSON.stringify({
+          model: MODEL,
+          temperature: 0.2,
+          stream: false,
+          messages: [
+            {
+              role: "system",
+              content:
+                "你是 Context 压缩器。把对话要点压成简洁中文摘要（不超过 400 字）。" +
+                "保留：用户目标、已确认事实、未完成事项、关键数字/地名。" +
+                "不要编造；不要输出工具调用；不要提密钥。",
+            },
+            {
+              role: "user",
+              content:
+                `以下是将被移出窗口的较早消息（最近 ${recentN} 条会原文保留）。请摘要：\n\n` +
+                digest,
+            },
+          ],
+        }),
+      });
+      if (!res.ok) {
+        console.error("summarize_llm http", res.status, await res.text());
+        return "【历史摘要 · LLM 失败，已回退本地压缩】\n" + fallback;
+      }
+      const json = (await res.json()) as {
+        choices?: Array<{ message?: { content?: string } }>;
+      };
+      const text = json.choices?.[0]?.message?.content?.trim();
+      if (!text) {
+        return "【历史摘要 · LLM 空响应，已回退本地压缩】\n" + fallback;
+      }
+      return "【历史摘要 · 由模型压缩】\n" + text;
+    } catch (err) {
+      console.error("summarize_llm error", err);
+      return "【历史摘要 · LLM 异常，已回退本地压缩】\n" + fallback;
+    }
+  };
+}
+
+function parseContextStrategy(raw: unknown): ContextStrategyName {
+  if (
+    raw === "recent_n" ||
+    raw === "char_budget" ||
+    raw === "summarize" ||
+    raw === "summarize_llm" ||
+    raw === "identity"
+  ) {
+    return raw;
+  }
+  return "identity";
 }
 
 /** 带 schema 校验的执行入口；按名路由 load_skill / MCP registry / 本地 mock */
@@ -888,7 +964,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     const timeoutMs =
       typeof body.timeoutMs === "number" && body.timeoutMs > 0 ? body.timeoutMs : undefined;
     const stopOnToolError = Boolean(body.stopOnToolError);
-    const contextStrategy = body.contextStrategy ?? "identity";
+    const contextStrategy = parseContextStrategy(body.contextStrategy);
     const recentN =
       typeof body.recentN === "number" && body.recentN >= 0 ? body.recentN : 6;
     const maxChars =
@@ -1216,6 +1292,8 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       strategy: contextStrategy,
       recentN,
       maxChars,
+      summarizeFn:
+        contextStrategy === "summarize_llm" ? createLlmSummarizeFn() : undefined,
     });
 
     writeSse(res, "meta", {

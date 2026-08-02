@@ -121,8 +121,9 @@ notes/my-harness/
 
 | 能力 | 位置 | 说明 |
 |------|------|------|
-| `assembleContext` | `kernel/context.ts` → `loop` 发模型前 | 裁剪的是视图；内存完整轨迹保留 |
-| `identity` / `recent_n` / `char_budget` | 同上 | 无 tokenizer；字符数为粗估 |
+| `assembleContext` | `kernel/context.ts` → `loop` 发模型前 | 裁剪/摘要的是视图；内存完整轨迹保留 |
+| `identity` / `recent_n` / `char_budget` | 同上 | 截断类；无 tokenizer；字符粗估 |
+| `summarize` / `summarize_llm` | 同上 | 较早历史 → 1 条摘要 + 最近 N 原文；后者调短补全 |
 | tool 孤儿回补 | `repairToolOrphans` | 避免裁断 `tool` 与 `assistant.toolCalls` 配对 |
 | Trace | `llm_request.payload.context` | before/after 条数与字符、preview 摘要 |
 | 出站 JSON | `llm_request.payload.openaiRequest` | 真实 Chat Completions body（无 Key） |

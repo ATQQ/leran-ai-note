@@ -205,6 +205,7 @@ export type RunOptions = {
     messages: UnifiedMessage[],
   ) =>
     | UnifiedMessage[]
+    | Promise<UnifiedMessage[]>
     | {
         messages: UnifiedMessage[];
         meta?: {
@@ -236,5 +237,36 @@ export type RunOptions = {
             }>;
           };
         };
-      };
+      }
+    | Promise<{
+        messages: UnifiedMessage[];
+        meta?: {
+          strategy?: string;
+          beforeCount?: number;
+          afterCount?: number;
+          beforeChars?: number;
+          afterChars?: number;
+          droppedCount?: number;
+          params?: Record<string, unknown>;
+          note?: string;
+          detail?: {
+            rules: string[];
+            steps: string[];
+            kept: Array<{
+              index: number;
+              role: string;
+              chars: number;
+              preview: string;
+              reason: string;
+            }>;
+            dropped: Array<{
+              index: number;
+              role: string;
+              chars: number;
+              preview: string;
+              reason: string;
+            }>;
+          };
+        };
+      }>;
 };

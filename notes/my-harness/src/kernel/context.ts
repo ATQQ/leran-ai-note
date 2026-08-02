@@ -1,15 +1,17 @@
 /**
- * Context 组装与裁剪（M3）
+ * Context 组装与裁剪（M3+）
  *
  * 对应 Pi：transformContext → 再交给 Adapter convertToLlm。
  * 本文件只产出 UnifiedMessage[]，不出现厂商协议字段。
  *
- * 基线策略（无 tokenizer）：
+ * 策略（无 tokenizer）：
  * - identity：原样发送（M1/M2 默认）
  * - recent_n：保留全部 system + 最近 N 条非 system（并回补 tool 孤儿）
  * - char_budget：保留 system + 从尾部按字符预算塞入（同样回补 tool 孤儿）
+ * - summarize：较早历史压成一条「摘要消息」+ 保留最近 recentN（本地抽取，不调模型）
+ * - summarize_llm：同上，但摘要正文由外部 LLM 钩子生成（可 async）
  *
- * 原则：裁剪的是「发给模型的视图」；loop 内存里的完整 messages 轨迹仍保留（审计用）。
+ * 原则：裁剪/摘要的是「发给模型的视图」；loop 内存里的完整 messages 轨迹仍保留（审计用）。
  */
 import type { UnifiedMessage } from "../types.ts";
 
@@ -54,7 +56,16 @@ export type AssembleResult = {
   meta: AssembleMeta;
 };
 
-export type AssembleContextFn = (messages: UnifiedMessage[]) => AssembleResult;
+/** 同步或异步均可（summarize_llm 需要 await） */
+export type AssembleContextFn = (
+  messages: UnifiedMessage[],
+) => AssembleResult | Promise<AssembleResult>;
+
+/** 把较早历史压成摘要文本（LLM 模式由 Server 注入） */
+export type SummarizeHistoryFn = (input: {
+  older: UnifiedMessage[];
+  recentN: number;
+}) => string | Promise<string>;
 
 /** 估算消息占用字符（粗略，学习向；非真实 token） */
 export function estimateChars(messages: UnifiedMessage[]): number {
@@ -215,6 +226,60 @@ const RULES_CHAR_BUDGET = [
   "④ 若一条都塞不下：仍强制保留最后 1 条（允许略超预算），避免空对话。",
   "⑤ 同样做 tool 孤儿回补；回补后可能略超预算，配对正确优先。",
 ];
+
+const RULES_SUMMARIZE = [
+  "① 前缀 system 全部保留。",
+  "② 非 system 历史拆成：较早段（将被摘要）+ 最近 recentN 条（原文保留）。",
+  "③ 最近窗口若以 tool 开头，向前回补 assistant，保证 tool_call 配对。",
+  "④ 较早段压成 1 条 user 消息（【历史摘要】…），插在 system 与最近窗口之间。",
+  "⑤ 与 recent_n「直接丢弃」不同：摘要保留主题线索，供模型续聊。",
+  "⑥ summarize=本地抽取；summarize_llm=摘要正文由模型生成（仍不改内存全量轨迹）。",
+];
+
+/** 单条消息压成摘要行（本地抽取，非 LLM） */
+function lineForSummary(m: UnifiedMessage, index: number): string {
+  const tools = m.toolCalls?.map((c) => c.name).join(",") || "";
+  let body = (m.content ?? "").replace(/\s+/g, " ").trim();
+  if (!body && tools) body = `(toolCalls: ${tools})`;
+  if (!body && m.toolCallId) body = `(tool result id=${m.toolCallId})`;
+  if (!body) body = "(empty)";
+  if (body.length > 120) body = body.slice(0, 120) + "…";
+  const tag =
+    m.role === "tool" && m.name
+      ? `tool:${m.name}`
+      : m.role + (tools ? `+${tools}` : "");
+  return `${index}. [${tag}] ${body}`;
+}
+
+/**
+ * 本地抽取式摘要：把较早消息列成要点，不调用模型。
+ * 适合演示「摘要 vs 丢弃」差异；质量弱于 LLM 摘要。
+ */
+export function buildLocalHistorySummary(
+  older: UnifiedMessage[],
+  opts?: { maxLines?: number; maxChars?: number },
+): string {
+  const maxLines = opts?.maxLines ?? 24;
+  const maxChars = opts?.maxChars ?? 1800;
+  const lines: string[] = [
+    "【历史摘要 · Harness 本地压缩，非模型原文】",
+    `共压缩 ${older.length} 条较早消息；细节已省略，完整轨迹仍在 Harness 内存。`,
+    "",
+  ];
+  const slice = older.length > maxLines ? older.slice(0, maxLines) : older;
+  slice.forEach((m, i) => {
+    // index 用相对序号，便于阅读
+    lines.push(lineForSummary(m, i + 1));
+  });
+  if (older.length > maxLines) {
+    lines.push(`…另有 ${older.length - maxLines} 条未列入要点`);
+  }
+  let text = lines.join("\n");
+  if (text.length > maxChars) {
+    text = text.slice(0, maxChars - 1) + "…";
+  }
+  return text;
+}
 
 /** 原样发送：M1/M2 默认 */
 export function assembleIdentity(messages: UnifiedMessage[]): AssembleResult {
@@ -447,11 +512,142 @@ export function assembleCharBudget(
   };
 }
 
+/**
+ * 摘要策略：较早历史 → 1 条摘要消息；最近 recentN 条原文保留。
+ * summarizeFn 缺省为本地抽取；传入则可换成 LLM 摘要。
+ */
+export async function assembleSummarize(
+  messages: UnifiedMessage[],
+  recentN: number,
+  opts?: {
+    mode?: "local" | "llm";
+    summarizeFn?: SummarizeHistoryFn;
+    summaryMaxChars?: number;
+  },
+): Promise<AssembleResult> {
+  const n = Math.max(0, recentN);
+  const mode = opts?.mode ?? "local";
+  const strategyName = mode === "llm" ? "summarize_llm" : "summarize";
+  const { system, rest } = splitSystemAndRest(messages);
+  const steps: string[] = [
+    `参数 recentN=${n} · mode=${mode}`,
+    `拆分：system=${system.length}，非 system=${rest.length}`,
+  ];
+
+  if (rest.length <= n) {
+    const out = [...system, ...rest];
+    steps.push("历史未超过 recentN，无需摘要");
+    const { kept, dropped } = diffKeptDropped(
+      messages,
+      out,
+      (i, m) => (m.role === "system" ? "前缀 system" : "未超限，原文保留"),
+      () => "",
+    );
+    return {
+      messages: out,
+      meta: buildMeta(
+        strategyName,
+        messages,
+        out,
+        { recentN: n, mode },
+        "无需摘要",
+        { rules: RULES_SUMMARIZE, steps, kept, dropped },
+      ),
+    };
+  }
+
+  // 先按 recent_n 算「最近窗口」起点，并做 tool 孤儿回补
+  const restStartInFull = system.length;
+  const idealStart = rest.length - n;
+  let windowStartInFull = restStartInFull + idealStart;
+  const repaired = repairToolOrphans(messages, windowStartInFull, messages.length);
+  windowStartInFull = repaired.start;
+  if (repaired.note) steps.push(repaired.note);
+  steps.push(
+    `最近窗口：full index [${windowStartInFull}..${messages.length - 1}]；` +
+      `较早段：[${restStartInFull}..${windowStartInFull - 1}]`,
+  );
+
+  const older = messages.slice(restStartInFull, windowStartInFull);
+  const recent = messages.slice(windowStartInFull);
+
+  let summaryText: string;
+  if (mode === "llm" && opts?.summarizeFn) {
+    steps.push("调用 summarizeFn（LLM）生成摘要正文…");
+    summaryText = await opts.summarizeFn({ older, recentN: n });
+    steps.push(`LLM 摘要长度 ${summaryText.length} 字符`);
+  } else {
+    summaryText = buildLocalHistorySummary(older, {
+      maxChars: opts?.summaryMaxChars ?? 1800,
+    });
+    steps.push(`本地抽取摘要 ${summaryText.length} 字符（${older.length} 条 → 1 条）`);
+  }
+
+  const summaryMsg: UnifiedMessage = {
+    role: "user",
+    content: summaryText,
+  };
+  // 标记仅用于审计（不下发给模型的专有协议字段；仍是合法 UnifiedMessage）
+  const out = [...system, summaryMsg, ...recent];
+  steps.push(
+    `结果：system ${system.length} + 摘要 1 + 最近 ${recent.length} = ${out.length} 条；` +
+      `字符 ${estimateChars(messages)} → ${estimateChars(out)}`,
+  );
+
+  // kept/dropped：摘要是新消息，不在 before 里；手动构造审计
+  const kept: AssembleMessageRow[] = [];
+  const dropped: AssembleMessageRow[] = [];
+  messages.forEach((m, idx) => {
+    if (idx < system.length) {
+      kept.push(rowOf(m, idx, "前缀 system"));
+    } else if (idx >= windowStartInFull) {
+      kept.push(rowOf(m, idx, `最近窗口内（recentN=${n}）`));
+    } else {
+      dropped.push(rowOf(m, idx, "压入历史摘要（原文不再逐条发送）"));
+    }
+  });
+  kept.splice(system.length, 0, {
+    index: -1,
+    role: "user",
+    chars: estimateChars([summaryMsg]),
+    preview: summarizeMessage(summaryMsg).preview,
+    reason: mode === "llm" ? "合成：LLM 历史摘要" : "合成：本地历史摘要",
+  });
+
+  return {
+    messages: out,
+    meta: buildMeta(
+      strategyName,
+      messages,
+      out,
+      {
+        recentN: n,
+        mode,
+        olderCount: older.length,
+        recentCount: recent.length,
+        summaryChars: summaryText.length,
+      },
+      `摘要压缩 ${older.length} 条较早历史`,
+      { rules: RULES_SUMMARIZE, steps, kept, dropped },
+    ),
+  };
+}
+
+export type ContextStrategyName =
+  | "identity"
+  | "recent_n"
+  | "char_budget"
+  | "summarize"
+  | "summarize_llm";
+
 /** 根据策略名工厂：Server / 演示页注入用 */
 export function createAssembleContext(opts: {
-  strategy?: "identity" | "recent_n" | "char_budget";
+  strategy?: ContextStrategyName;
   recentN?: number;
   maxChars?: number;
+  /** summarize_llm 时注入；未注入则回退本地摘要并在 note 标明 */
+  summarizeFn?: SummarizeHistoryFn;
+  summaryMaxChars?: number;
 }): AssembleContextFn {
   const strategy = opts.strategy ?? "identity";
   if (strategy === "recent_n") {
@@ -461,6 +657,23 @@ export function createAssembleContext(opts: {
   if (strategy === "char_budget") {
     const maxChars = opts.maxChars ?? 2000;
     return (messages) => assembleCharBudget(messages, maxChars);
+  }
+  if (strategy === "summarize") {
+    const recentN = opts.recentN ?? 4;
+    return (messages) =>
+      assembleSummarize(messages, recentN, {
+        mode: "local",
+        summaryMaxChars: opts.summaryMaxChars,
+      });
+  }
+  if (strategy === "summarize_llm") {
+    const recentN = opts.recentN ?? 4;
+    return (messages) =>
+      assembleSummarize(messages, recentN, {
+        mode: opts.summarizeFn ? "llm" : "local",
+        summarizeFn: opts.summarizeFn,
+        summaryMaxChars: opts.summaryMaxChars,
+      });
   }
   return assembleIdentity;
 }

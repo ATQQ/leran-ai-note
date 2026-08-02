@@ -145,8 +145,9 @@ Adapter adapters/openai.ts  · Chat Completions stream</pre>
    Adapter → openaiRequest（页面 JSON 可对照）</pre>
         <ul class="bullets">
           <li><strong>identity</strong>：原样发出</li>
-          <li><strong>recent_n</strong>：system + 最近 N 条</li>
+          <li><strong>recent_n</strong>：system + 最近 N 条（旧的丢弃）</li>
           <li><strong>char_budget</strong>：按字符粗估裁到预算</li>
+          <li><strong>summarize / summarize_llm</strong>：旧轮次压成摘要 + 最近 N 原文</li>
         </ul>
         <p class="callout">
           Trace 里 <code>beforeCount</code> 大、<code>afterCount</code> 小 = 只裁了视图，内存没删。

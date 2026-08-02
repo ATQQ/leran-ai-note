@@ -49,8 +49,10 @@
             策略
             <select id="strategy">
               <option value="identity">identity（不裁剪）</option>
-              <option value="recent_n" selected>recent_n（最近 N 条）</option>
+              <option value="recent_n">recent_n（最近 N 条 · 丢弃旧的）</option>
               <option value="char_budget">char_budget（字符预算）</option>
+              <option value="summarize" selected>summarize（本地摘要 + 最近 N）</option>
+              <option value="summarize_llm">summarize_llm（模型摘要 + 最近 N）</option>
             </select>
           </label>
           <label class="field">
