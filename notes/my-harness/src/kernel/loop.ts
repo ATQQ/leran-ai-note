@@ -10,7 +10,14 @@
  * - 禁止写入 OpenAI 线格式字段名（如 tool_calls）；协议转换留给 Adapter
  * - 对应 Pi：agent-core 的循环 + 事件；对应学习笔记：Harness 强制项（步数/取消/超时）
  */
-import type { RunEvent, RunOptions, StreamDetail, UnifiedMessage } from "../types.ts";
+import type {
+  RunEvent,
+  RunOptions,
+  StreamDetail,
+  ToolCall,
+  ToolResult,
+  UnifiedMessage,
+} from "../types.ts";
 import { assembleIdentity, estimateChars, summarizeMessage } from "./context.ts";
 import { isHighRiskTool } from "./tool-policy.ts";
 
@@ -248,6 +255,7 @@ export async function runAgent(opts: RunOptions): Promise<{
       maxSteps,
       timeoutMs: opts.timeoutMs ?? null,
       stopOnToolError,
+      toolExecution: opts.toolExecution ?? "sequential",
     },
   });
 
@@ -370,102 +378,96 @@ export async function runAgent(opts: RunOptions): Promise<{
       }
 
       // 有工具调用 → Harness 调度执行并回写（执行依据是结构，不是自然语言）
+      // M8：parallel = 同轮并发执行；回写顺序仍与 calls 数组一致（对齐 Pi）
+      const needsConfirm = Boolean(
+        opts.confirmTool && calls.some((c) => isHighRiskTool(c.name)),
+      );
+      const mode: "sequential" | "parallel" =
+        opts.toolExecution === "parallel" && !needsConfirm
+          ? "parallel"
+          : "sequential";
+
       let hitToolError = false;
-      for (const call of calls) {
-        if (signal?.aborted) {
+      if (mode === "parallel") {
+        const batch = await runToolsParallel({
+          calls,
+          executeTool: opts.executeTool,
+          onEvent: opts.onEvent,
+          signal,
+          timedOut,
+        });
+        if (batch.aborted) {
           stopReason = timedOut() ? "timeout" : "aborted";
-          break;
-        }
-
-        emit(opts.onEvent, {
-          type: "tool_start",
-          phase: "execute_tool",
-          title: `执行工具 · ${call.name}`,
-          summary: `id=${call.id}`,
-          actor: "tool",
-          direction: "local",
-          payload: { toolCallId: call.id, name: call.name, arguments: call.arguments },
-        });
-
-        let result;
-        if (opts.confirmTool && isHighRiskTool(call.name)) {
-          emit(opts.onEvent, {
-            type: "tool_confirm_pending",
-            phase: "confirm_tool",
-            title: `等待确认 · ${call.name}`,
-            summary: `高风险工具 id=${call.id}，未确认前不执行`,
-            actor: "harness",
-            direction: "local",
-            payload: {
-              toolCallId: call.id,
-              name: call.name,
-              arguments: call.arguments,
-              risk: "high",
-            },
-            note: "M7.1：前端 allow/deny → Server 唤醒后才继续",
-          });
-          const decision = await opts.confirmTool(call);
-          emit(opts.onEvent, {
-            type: "tool_confirm_result",
-            phase: "confirm_tool",
-            title:
-              decision === "allow"
-                ? `已确认执行 · ${call.name}`
-                : `已拒绝执行 · ${call.name}`,
-            summary: decision,
-            actor: "harness",
-            direction: "local",
-            payload: {
-              toolCallId: call.id,
-              name: call.name,
-              decision,
-            },
-          });
-          if (decision === "deny") {
-            result = {
-              toolCallId: call.id,
-              name: call.name,
-              content: JSON.stringify({
-                error: "user_denied",
-                message: "用户拒绝执行高风险工具",
-                name: call.name,
-                arguments: call.arguments,
-              }),
-              isError: true,
-            };
-          } else {
-            result = await opts.executeTool(call);
-          }
         } else {
-          result = await opts.executeTool(call);
+          for (const { call, result, startedAt, endedAt } of batch.results) {
+            const toolMessage: UnifiedMessage = {
+              role: "tool",
+              content: result.content,
+              toolCallId: result.toolCallId,
+              name: result.name,
+            };
+            messages.push(toolMessage);
+            emit(opts.onEvent, {
+              type: "tool_end",
+              phase: "append_tool_result",
+              title: `回写工具结果 · ${call.name}`,
+              summary: result.isError
+                ? "工具返回错误（已回写）"
+                : "结果已写入 Context",
+              actor: "harness",
+              direction: "local",
+              payload: {
+                appended: toolMessage,
+                isError: result.isError ?? false,
+                parallel: true,
+                startedAt,
+                endedAt,
+                durationMs: endedAt - startedAt,
+              },
+              note: result.isError
+                ? "校验失败或执行失败；不静默吞掉"
+                : "并行完成；此处按 assistant.toolCalls 顺序回写",
+            });
+            if (result.isError && stopOnToolError) {
+              hitToolError = true;
+              stopReason = "tool_error";
+              break;
+            }
+          }
         }
-
-        // 统一消息里用 role:"tool" + toolCallId 绑定；Adapter 出站时再映射成厂商线格式
-        const toolMessage: UnifiedMessage = {
-          role: "tool",
-          content: result.content,
-          toolCallId: result.toolCallId,
-          name: result.name,
-        };
-        messages.push(toolMessage);
-
-        emit(opts.onEvent, {
-          type: "tool_end",
-          phase: "append_tool_result",
-          title: `回写工具结果 · ${call.name}`,
-          summary: result.isError ? "工具返回错误（已回写）" : "结果已写入 Context",
-          actor: "harness",
-          direction: "local",
-          payload: { appended: toolMessage, isError: result.isError ?? false },
-          note: result.isError
-            ? "校验失败或执行失败；不静默吞掉"
-            : null,
-        });
-
-        if (result.isError && stopOnToolError) {
-          hitToolError = true;
-          stopReason = "tool_error";
-          break;
+      } else {
+        for (const call of calls) {
+          if (signal?.aborted) {
+            stopReason = timedOut() ? "timeout" : "aborted";
+            break;
+          }
+          const result = await executeOneToolCall(call, opts);
+          const toolMessage: UnifiedMessage = {
+            role: "tool",
+            content: result.content,
+            toolCallId: result.toolCallId,
+            name: result.name,
+          };
+          messages.push(toolMessage);
+          emit(opts.onEvent, {
+            type: "tool_end",
+            phase: "append_tool_result",
+            title: `回写工具结果 · ${call.name}`,
+            summary: result.isError
+              ? "工具返回错误（已回写）"
+              : "结果已写入 Context",
+            actor: "harness",
+            direction: "local",
+            payload: { appended: toolMessage, isError: result.isError ?? false },
+            note: result.isError
+              ? "校验失败或执行失败；不静默吞掉"
+              : null,
+          });
+          if (result.isError && stopOnToolError) {
+            hitToolError = true;
+            stopReason = "tool_error";
+            break;
+          }
         }
       }
 
@@ -511,4 +513,144 @@ export async function runAgent(opts: RunOptions): Promise<{
   });
 
   return { messages, finalText, stopReason };
+}
+
+/** 串行路径：含高风险确认 */
+async function executeOneToolCall(
+  call: ToolCall,
+  opts: RunOptions,
+): Promise<ToolResult> {
+  emit(opts.onEvent, {
+    type: "tool_start",
+    phase: "execute_tool",
+    title: `执行工具 · ${call.name}`,
+    summary: `id=${call.id}`,
+    actor: "tool",
+    direction: "local",
+    payload: {
+      toolCallId: call.id,
+      name: call.name,
+      arguments: call.arguments,
+      parallel: false,
+    },
+  });
+
+  if (opts.confirmTool && isHighRiskTool(call.name)) {
+    emit(opts.onEvent, {
+      type: "tool_confirm_pending",
+      phase: "confirm_tool",
+      title: `等待确认 · ${call.name}`,
+      summary: `高风险工具 id=${call.id}，未确认前不执行`,
+      actor: "harness",
+      direction: "local",
+      payload: {
+        toolCallId: call.id,
+        name: call.name,
+        arguments: call.arguments,
+        risk: "high",
+      },
+      note: "M7.1：前端 allow/deny → Server 唤醒后才继续",
+    });
+    const decision = await opts.confirmTool(call);
+    emit(opts.onEvent, {
+      type: "tool_confirm_result",
+      phase: "confirm_tool",
+      title:
+        decision === "allow"
+          ? `已确认执行 · ${call.name}`
+          : `已拒绝执行 · ${call.name}`,
+      summary: decision,
+      actor: "harness",
+      direction: "local",
+      payload: { toolCallId: call.id, name: call.name, decision },
+    });
+    if (decision === "deny") {
+      return {
+        toolCallId: call.id,
+        name: call.name,
+        content: JSON.stringify({
+          error: "user_denied",
+          message: "用户拒绝执行高风险工具",
+          name: call.name,
+          arguments: call.arguments,
+        }),
+        isError: true,
+      };
+    }
+  }
+
+  return opts.executeTool(call);
+}
+
+/**
+ * 并行路径：同时启动所有工具；返回顺序与 calls 一致。
+ * 不含确认门闩（调用方已保证）。
+ */
+async function runToolsParallel(input: {
+  calls: ToolCall[];
+  executeTool: (call: ToolCall) => Promise<ToolResult>;
+  onEvent: RunOptions["onEvent"];
+  signal?: AbortSignal;
+  timedOut: () => boolean;
+}): Promise<{
+  aborted: boolean;
+  results: Array<{
+    call: ToolCall;
+    result: ToolResult;
+    startedAt: number;
+    endedAt: number;
+  }>;
+}> {
+  const { calls, executeTool, onEvent, signal } = input;
+  if (signal?.aborted) return { aborted: true, results: [] };
+
+  for (const call of calls) {
+    emit(onEvent, {
+      type: "tool_start",
+      phase: "execute_tool",
+      title: `执行工具 · ${call.name}`,
+      summary: `id=${call.id} · parallel`,
+      actor: "tool",
+      direction: "local",
+      payload: {
+        toolCallId: call.id,
+        name: call.name,
+        arguments: call.arguments,
+        parallel: true,
+      },
+      note: "同轮并发启动",
+    });
+  }
+
+  const results = await Promise.all(
+    calls.map(async (call) => {
+      const startedAt = Date.now();
+      let result: ToolResult;
+      try {
+        if (signal?.aborted) {
+          result = {
+            toolCallId: call.id,
+            name: call.name,
+            content: JSON.stringify({ error: "aborted" }),
+            isError: true,
+          };
+        } else {
+          result = await executeTool(call);
+        }
+      } catch (err) {
+        result = {
+          toolCallId: call.id,
+          name: call.name,
+          content: JSON.stringify({
+            error: "tool_threw",
+            message: err instanceof Error ? err.message : String(err),
+          }),
+          isError: true,
+        };
+      }
+      return { call, result, startedAt, endedAt: Date.now() };
+    }),
+  );
+
+  return { aborted: Boolean(signal?.aborted), results };
 }

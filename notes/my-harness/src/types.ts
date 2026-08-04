@@ -127,6 +127,9 @@ export type RunEvent = {
     | "skill_inject"
     /** M5：MCP 连接/工具表合并说明（非 Loop 本体步骤） */
     | "mcp_bridge"
+    /** M8：子 Agent 起停（嵌套 runAgent） */
+    | "subagent_start"
+    | "subagent_end"
     | "run_end"
     | "error";
   /** 与 demo Viewer 类似的阶段名，如 init / request_model / stream_parse */
@@ -196,6 +199,12 @@ export type RunOptions = {
    * 未传 = 不要求确认。
    */
   confirmTool?: (call: ToolCall) => Promise<"allow" | "deny">;
+  /**
+   * M8：同一 assistant 消息内多个 tool_calls 的执行方式。
+   * - sequential（默认）：按数组顺序逐个 await（含确认门闩）
+   * - parallel：无高风险确认时 Promise.all 并发；结果仍按模型给出的顺序回写
+   */
+  toolExecution?: "sequential" | "parallel";
   /**
    * Context 组装钩子（M3）。
    * 发往模型前必须经过此钩子；可返回裁剪后的 messages + 审计 meta。

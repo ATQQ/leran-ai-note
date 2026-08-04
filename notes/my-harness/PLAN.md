@@ -245,3 +245,4 @@
 | M5 | **实现完成**：raw/sdk stdio + 远程 Streamable HTTP + `web/m5-mcp/`；待本地勾选 V7/V7b |
 | M6 | **跳过**（Anthropic Adapter） |
 | M7 | **实现完成**：确认门闩 / reasoning_delta / partialArgs / Trace 步进 + `web/m7-enhancements/` |
+| M8 | **实现完成**：`toolExecution=parallel|sequential` + `run_subagent` 嵌套 `runAgent` + `web/m8-parallel-subagent/` |

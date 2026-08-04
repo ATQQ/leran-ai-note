@@ -36,8 +36,13 @@ import {
   planSkillInjection,
   type SkillDef,
 } from "../src/kernel/skills.ts";
+import { executeRunSubagent } from "../src/kernel/subagent.ts";
 import { annotateToolRisk, isHighRiskTool } from "../src/kernel/tool-policy.ts";
-import { MOCK_TOOLS, executeMockTool } from "../src/kernel/tools.ts";
+import {
+  MOCK_TOOLS,
+  SUBAGENT_TOOLS,
+  executeMockTool,
+} from "../src/kernel/tools.ts";
 import { executeToolWithValidation } from "../src/kernel/validate.ts";
 import { loadEnv, packageRootFrom } from "../src/load-env.ts";
 import { parseMcpBackend } from "../src/mcp/factory.ts";
@@ -47,7 +52,13 @@ import {
   mergeLocalAndMcpTools,
 } from "../src/mcp/registry.ts";
 import { TraceRecorder } from "../src/trace.ts";
-import type { RunEvent, ToolCall, ToolDef, UnifiedMessage } from "../src/types.ts";
+import type {
+  LlmAdapter,
+  RunEvent,
+  ToolCall,
+  ToolDef,
+  UnifiedMessage,
+} from "../src/types.ts";
 
 const ROOT = packageRootFrom(import.meta.url);
 loadEnv(ROOT);
@@ -176,6 +187,8 @@ type RunBody = {
   localGuard?: "unknown_tool" | "bad_args" | "confirm_wipe";
   /** M7.1：高风险工具需前端确认后再执行 */
   requireConfirm?: boolean;
+  /** M8：同轮 tool_calls 串行或并行 */
+  toolExecution?: "sequential" | "parallel";
   /** M3：Context 裁剪/摘要策略 */
   contextStrategy?: ContextStrategyName;
   /** recent_n / summarize*：保留最近几条非 system（默认 6） */
@@ -413,13 +426,54 @@ function parseContextStrategy(raw: unknown): ContextStrategyName {
   return "identity";
 }
 
-/** 带 schema 校验的执行入口；按名路由 load_skill / MCP registry / 本地 mock */
+type ExecuteGuardedCtx = {
+  adapter: LlmAdapter;
+  signal?: AbortSignal;
+  onEvent?: (event: RunEvent) => void;
+  /** 子 Agent 嵌套深度；>0 时拒绝再 run_subagent */
+  subagentDepth?: number;
+};
+
+/** 带 schema 校验的执行入口；按名路由 load_skill / MCP / 子 Agent / 本地 mock */
 function createExecuteGuarded(
   tools: ToolDef[],
   skills: SkillDef[],
   mcpNames: Set<string>,
+  ctx?: ExecuteGuardedCtx,
 ) {
   return async (call: ToolCall) => {
+    if (call.name === "run_subagent") {
+      if (!ctx?.adapter) {
+        return {
+          toolCallId: call.id,
+          name: call.name,
+          content: JSON.stringify({
+            error: "subagent_unavailable",
+            message: "当前路径未注入 adapter，无法启动子 Agent",
+          }),
+          isError: true,
+        };
+      }
+      const depth = ctx.subagentDepth ?? 0;
+      // 子 Agent 自己的 execute：只有子集工具，depth+1 防套娃
+      const childExecute = createExecuteGuarded(SUBAGENT_TOOLS, [], new Set(), {
+        adapter: ctx.adapter,
+        signal: ctx.signal,
+        onEvent: ctx.onEvent,
+        subagentDepth: depth + 1,
+      });
+      return executeToolWithValidation(call, tools, (c) =>
+        executeRunSubagent({
+          call: c,
+          adapter: ctx.adapter,
+          executeTool: childExecute,
+          signal: ctx.signal,
+          onEvent: ctx.onEvent,
+          depth,
+          tools: SUBAGENT_TOOLS,
+        }),
+      );
+    }
     if (call.name === "load_skill") {
       return executeToolWithValidation(call, tools, async (c) =>
         executeLoadSkill(c, skills),
@@ -981,6 +1035,8 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     });
 
     const requireConfirm = Boolean(body.requireConfirm);
+    const toolExecution: "sequential" | "parallel" =
+      body.toolExecution === "parallel" ? "parallel" : "sequential";
     const runId = "run_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
 
     // 本地守卫：不需要 API Key，确定性产出错误 ToolResult（V3）
@@ -1229,11 +1285,6 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
     runTools = planned.enableLoadSkillTool
       ? [...runTools, LOAD_SKILL_TOOL]
       : runTools;
-    const executeTool = createExecuteGuarded(
-      runTools,
-      DISCOVERED_SKILLS,
-      mcpNames,
-    );
     // Trace 记录实际发给模型的 tools（含或不含 load_skill / MCP）
     trace.toolsSchema = openaiToolsSchemaForTrace(runTools);
 
@@ -1326,7 +1377,20 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
       mcpConflictPolicy: "first-wins",
       mcpConflicts,
       tools: runTools.map((t) => t.name),
+      toolExecution,
     });
+
+    const executeTool = createExecuteGuarded(
+      runTools,
+      DISCOVERED_SKILLS,
+      mcpNames,
+      {
+        adapter,
+        signal: ac.signal,
+        onEvent,
+        subagentDepth: 0,
+      },
+    );
 
     try {
       const result = await runAgent({
@@ -1341,6 +1405,7 @@ async function handleRequest(req: http.IncomingMessage, res: http.ServerResponse
         assembleContext,
         signal: ac.signal,
         onEvent,
+        toolExecution,
         confirmTool: requireConfirm
           ? (call) => waitForToolConfirm(runId, call, ac.signal)
           : undefined,

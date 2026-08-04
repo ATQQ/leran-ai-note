@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>M8 · 并行工具 / 子 Agent</title>
+    <link rel="stylesheet" href="../shared/shared.css" />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main>
+      <p><a href="../index/index.html">← 索引</a></p>
+      <h1>M8 · 并行 tool_calls / 子 Agent</h1>
+      <p class="sub">
+        对照 Pi：同轮工具可并发，结果按模型顺序回写；子 Agent = 嵌套
+        <code>runAgent</code>（独立 Context + 工具子集）。
+      </p>
+
+      <div class="card">
+        <div class="row panel-head"><strong>配置</strong></div>
+        <div class="controls">
+          <label class="field">
+            toolExecution
+            <select id="toolExecution">
+              <option value="sequential">sequential（串行 await）</option>
+              <option value="parallel" selected>parallel（Promise.all）</option>
+            </select>
+          </label>
+          <label class="field">
+            maxSteps
+            <input id="maxSteps" type="number" min="1" max="12" value="8" />
+          </label>
+        </div>
+        <p class="hint">
+          mock <code>get_weather</code> / <code>add</code> 各故意延迟 400ms：并行时总耗时应明显短于串行。
+          含高风险确认时强制串行。
+        </p>
+        <label for="prompt">用户请求</label>
+        <textarea id="prompt">
+请同时查深圳和上海的天气，并用工具计算 12 加 30，最后用中文一句话总结。</textarea>
+        <div class="row">
+          <button type="button" class="secondary" data-prompt="parallel">并行多工具</button>
+          <button type="button" class="secondary" data-prompt="sub">子 Agent</button>
+          <button type="button" class="secondary" data-prompt="mix">子 Agent + 本地工具</button>
+        </div>
+        <div class="row">
+          <button id="run">运行</button>
+          <button id="stop" class="secondary" disabled>取消</button>
+          <span id="status" class="pill">idle</span>
+          <span id="timing" class="pill">—</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row panel-head"><strong>流式答复</strong></div>
+        <pre id="stream" class="box">（等待…）</pre>
+      </div>
+
+      <div class="card">
+        <div class="row panel-head">
+          <strong>工具时间线</strong>
+          <span class="pill">看 startedAt / durationMs 是否重叠</span>
+        </div>
+        <pre id="timeline" class="box tall">（tool_start / tool_end / subagent_*）</pre>
+      </div>
+
+      <div class="card">
+        <div class="row panel-head"><strong>事件</strong></div>
+        <pre id="events" class="box tall">（空）</pre>
+      </div>
+    </main>
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

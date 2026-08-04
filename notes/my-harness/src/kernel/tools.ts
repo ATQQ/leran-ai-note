@@ -54,12 +54,43 @@ export const MOCK_TOOLS: ToolDef[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: "run_subagent",
+    description:
+      "【子 Agent】把子任务交给独立 Agent 循环（独立 Context、有限步数、工具子集）。" +
+      "适合调研/计算子问题；不要用它做高风险写操作。",
+    parameters: {
+      type: "object",
+      properties: {
+        task: {
+          type: "string",
+          description: "交给子 Agent 的任务描述（完整、自包含）",
+        },
+        maxSteps: {
+          type: "number",
+          description: "子循环最大步数，默认 4",
+        },
+      },
+      required: ["task"],
+      additionalProperties: false,
+    },
+  },
 ];
 
-/** name → 实现函数；与 schema 一一对应 */
+/** 子 Agent 允许的工具（禁止再套娃 run_subagent / wipe） */
+export const SUBAGENT_TOOLS: ToolDef[] = MOCK_TOOLS.filter(
+  (t) => t.name === "get_weather" || t.name === "add",
+);
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/** name → 实现函数；与 schema 一一对应（run_subagent 由 Server 注入，不在此实现） */
 const impl: Record<string, (args: Record<string, unknown>) => Promise<unknown>> = {
   get_weather: async ({ city }) => {
-    // 假数据表：只为演示「执行 → 回写」，不访问真实天气 API
+    // 故意延迟：便于 M8 观察 parallel vs sequential 的耗时重叠
+    await sleep(400);
     const table: Record<string, { temp_c: number; condition: string }> = {
       北京: { temp_c: 28, condition: "晴" },
       上海: { temp_c: 31, condition: "多云" },
@@ -69,7 +100,10 @@ const impl: Record<string, (args: Record<string, unknown>) => Promise<unknown>> 
     const hit = table[key] ?? { temp_c: 26, condition: "未知城市（演示默认值）" };
     return { city: key, ...hit, source: "local-mock" };
   },
-  add: async ({ a, b }) => ({ a, b, sum: Number(a) + Number(b) }),
+  add: async ({ a, b }) => {
+    await sleep(400);
+    return { a, b, sum: Number(a) + Number(b) };
+  },
   wipe_demo: async ({ confirmToken }) => ({
     wiped: true,
     confirmToken: String(confirmToken ?? ""),

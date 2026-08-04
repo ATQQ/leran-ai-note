@@ -35,3 +35,4 @@ npm run demo
 - **M5**：双 Host 后端对照——手写 JSON-RPC（`stdio-client`）与官方 SDK（`sdk-client`）共用 `McpHostClient`；多 Server + 远程 Streamable HTTP；`web/m5-mcp/`。闸门 V7 待本地勾选。
 - **M6**：跳过 Anthropic Adapter。
 - **M7**：高风险确认门闩（`wipe_demo` / `write_file`）+ `reasoning_delta` + 工具参数 `partialArgs` 预览 + Trace 步进播放器；`web/m7-enhancements/`。
+- **M8**：同轮 `tool_calls` 可 `parallel`（结果仍按模型顺序回写）；`run_subagent` 嵌套独立 Agent 循环；`web/m8-parallel-subagent/`。

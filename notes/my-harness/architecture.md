@@ -184,3 +184,12 @@ Anthropic Adapter 未实现。
 | Trace 步进 | `web/shared/trace-player.js` | 对齐 FC demo Viewer 的步进 / actor 高亮 |
 | 演示 | `web/m7-enhancements/` | 本地 `confirm_wipe` 可不经模型验收 7.1 |
 
+## M8 并行工具 / 子 Agent
+
+| 能力 | 位置 | 说明 |
+|------|------|------|
+| 并行 tool_calls | `loop.ts` `toolExecution` | `parallel` → `Promise.all`；**回写顺序 = 模型 toolCalls 顺序**（对齐 Pi） |
+| 确认冲突 | 同上 | 批次含高风险确认时强制 serial |
+| 子 Agent | `kernel/subagent.ts` + 工具 `run_subagent` | 嵌套 `runAgent`；独立 Context；工具子集；禁套娃 |
+| 演示 | `web/m8-parallel-subagent/` | 对比 serial/parallel 耗时；观察 `[子]` 事件 |
+
